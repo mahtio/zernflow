@@ -14,6 +14,8 @@ import {
   Plus,
   Loader2,
   ArrowLeft,
+  Copy,
+  Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -93,6 +95,7 @@ export function TeamView({
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [inviteSuccess, setInviteSuccess] = useState(false);
+  const [copiedInviteId, setCopiedInviteId] = useState<string | null>(null);
 
   // Remove member
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -163,6 +166,13 @@ export function TeamView({
     }
 
     setRevokingId(null);
+  }
+
+  async function handleCopyInvite(inviteId: string) {
+    const inviteUrl = `${window.location.origin}/invite/${inviteId}`;
+    await navigator.clipboard.writeText(inviteUrl);
+    setCopiedInviteId(inviteId);
+    setTimeout(() => setCopiedInviteId(null), 2000);
   }
 
   return (
@@ -400,18 +410,34 @@ export function TeamView({
                         </div>
 
                         {canManageInvites && (
-                          <button
-                            onClick={() => setConfirmRevoke(invite.id)}
-                            disabled={revokingId === invite.id}
-                            className="shrink-0 ml-4 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                            title={pt ? "Revogar convite" : "Revoke invite"}
-                          >
-                            {revokingId === invite.id ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <X className="h-3.5 w-3.5" />
-                            )}
-                          </button>
+                          <div className="ml-4 flex shrink-0 items-center gap-1">
+                            <button
+                              onClick={() => handleCopyInvite(invite.id)}
+                              className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                              title={pt ? "Copiar link do convite" : "Copy invitation link"}
+                            >
+                              {copiedInviteId === invite.id ? (
+                                <Check className="h-3.5 w-3.5 text-green-600" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                              {copiedInviteId === invite.id
+                                ? (pt ? "Copiado" : "Copied")
+                                : (pt ? "Copiar link" : "Copy link")}
+                            </button>
+                            <button
+                              onClick={() => setConfirmRevoke(invite.id)}
+                              disabled={revokingId === invite.id}
+                              className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                              title={pt ? "Revogar convite" : "Revoke invite"}
+                            >
+                              {revokingId === invite.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <X className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </div>
                         )}
                       </div>
                     );
