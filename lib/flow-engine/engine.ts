@@ -735,26 +735,53 @@ async function executeSetField(
   data: SetFieldNodeData,
   context: FlowExecutionContext
 ) {
-  // Find field definition
-  const { data: fieldDef } = await supabase
+  if (!data.fieldSlug) {
+    console.error("[executeSetField] Field slug is required");
+    return;
+  }
+
+  const { data: fieldDef, error: fieldDefError } = await supabase
     .from("custom_field_definitions")
+    .upsert(
+      {
+        workspace_id: context.workspaceId,
+        slug: data.fieldSlug,
+        name: data.fieldSlug,
+        type: "text",
+      },
+      { onConflict: "workspace_id,slug" }
+    )
     .select("id")
-    .eq("workspace_id", context.workspaceId)
-    .eq("slug", data.fieldSlug)
     .single();
 
-  if (!fieldDef) return;
+  if (fieldDefError || !fieldDef) {
+    console.error("[executeSetField] Failed to ensure field definition", {
+      error: fieldDefError,
+      fieldSlug: data.fieldSlug,
+      workspaceId: context.workspaceId,
+    });
+    return;
+  }
 
   const value = interpolateVariables(data.value, context.variables || {});
+  const { error: valueError } = await supabase
+    .from("contact_custom_fields")
+    .upsert(
+      {
+        contact_id: context.contactId,
+        field_id: fieldDef.id,
+        value,
+      },
+      { onConflict: "contact_id,field_id" }
+    );
 
-  await supabase.from("contact_custom_fields").upsert(
-    {
-      contact_id: context.contactId,
-      field_id: fieldDef.id,
-      value,
-    },
-    { onConflict: "contact_id,field_id" }
-  );
+  if (valueError) {
+    console.error("[executeSetField] Failed to save contact field value", {
+      error: valueError,
+      contactId: context.contactId,
+      fieldId: fieldDef.id,
+    });
+  }
 }
 
 async function executeHttpRequest(
