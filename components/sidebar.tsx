@@ -21,6 +21,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
+import { LanguageSelector } from "@/components/language-selector";
+import { useLocale } from "@/components/locale-provider";
 import type { Database } from "@/lib/types/database";
 
 type Workspace = Database["public"]["Tables"]["workspaces"]["Row"];
@@ -39,16 +41,16 @@ function subscribeToThemeClass(callback: () => void) {
 }
 
 const navigation = [
-  { name: "Flows", href: "/dashboard/flows", icon: GitBranch },
-  { name: "Inbox", href: "/dashboard/inbox", icon: MessageSquare },
-  { name: "Contacts", href: "/dashboard/contacts", icon: Users },
-  { name: "Broadcasts", href: "/dashboard/broadcasts", icon: Radio },
-  { name: "Sequences", href: "/dashboard/sequences", icon: ListOrdered },
-  { name: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
-  { name: "Growth", href: "/dashboard/growth", icon: Sprout },
-  { name: "Channels", href: "/dashboard/channels", icon: Plug },
-  { name: "Settings", href: "/dashboard/settings", icon: Settings },
-];
+  { key: "flows", href: "/dashboard/flows", icon: GitBranch },
+  { key: "inbox", href: "/dashboard/inbox", icon: MessageSquare },
+  { key: "contacts", href: "/dashboard/contacts", icon: Users },
+  { key: "broadcasts", href: "/dashboard/broadcasts", icon: Radio },
+  { key: "sequences", href: "/dashboard/sequences", icon: ListOrdered },
+  { key: "analytics", href: "/dashboard/analytics", icon: BarChart3 },
+  { key: "growth", href: "/dashboard/growth", icon: Sprout },
+  { key: "channels", href: "/dashboard/channels", icon: Plug },
+  { key: "settings", href: "/dashboard/settings", icon: Settings },
+] as const;
 
 export function Sidebar({
   workspace,
@@ -61,6 +63,7 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
+  const { t } = useLocale();
   const dark = useSyncExternalStore(
     subscribeToThemeClass,
     () => document.documentElement.classList.contains("dark"),
@@ -90,7 +93,7 @@ export function Sidebar({
           const isActive = pathname.startsWith(item.href);
           return (
             <Link
-              key={item.name}
+              key={item.key}
               href={item.href}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
@@ -100,26 +103,29 @@ export function Sidebar({
               )}
             >
               <item.icon className="h-4 w-4" />
-              {item.name}
+              {t[item.key]}
             </Link>
           );
         })}
       </nav>
 
       <div className="border-t border-sidebar-border p-3 space-y-1">
+        <div className="px-3 py-2">
+          <LanguageSelector />
+        </div>
         <button
           onClick={toggleTheme}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
         >
           {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          {dark ? "Light mode" : "Dark mode"}
+          {dark ? t.lightMode : t.darkMode}
         </button>
         <button
           onClick={handleSignOut}
           className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
         >
           <LogOut className="h-4 w-4" />
-          Sign out
+          {t.signOut}
         </button>
       </div>
     </div>
