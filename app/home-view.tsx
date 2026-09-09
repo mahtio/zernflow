@@ -200,7 +200,7 @@ export function HomeView() {
             <span className="text-base font-bold text-gray-900">ZernFlow</span>
           </Link>
           <div className="flex items-center gap-3">
-            <LanguageSelector />
+            <LanguageSelector className="w-44 sm:w-48" />
             <Link
               href="https://github.com/zernio-dev/zernflow"
               target="_blank"

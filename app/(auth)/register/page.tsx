@@ -54,7 +54,7 @@ export default function RegisterPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="absolute right-4 top-4">
-        <LanguageSelector />
+        <LanguageSelector className="w-48" />
       </div>
       <div className="w-full max-w-sm space-y-6">
         <div className="text-center">

@@ -110,8 +110,8 @@ export function Sidebar({
       </nav>
 
       <div className="border-t border-sidebar-border p-3 space-y-1">
-        <div className="px-3 py-2">
-          <LanguageSelector />
+        <div className="px-1 py-1">
+          <LanguageSelector direction="up" />
         </div>
         <button
           onClick={toggleTheme}
