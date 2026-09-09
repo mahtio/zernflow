@@ -28,8 +28,15 @@ interface ActionPanelData {
   [key: string]: unknown;
 }
 
+interface CustomFieldOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface ActionPanelProps {
   data: Record<string, unknown>;
+  customFields: CustomFieldOption[];
   onChange: (data: Record<string, unknown>) => void;
 }
 
@@ -38,7 +45,11 @@ interface ActionSubPanelProps {
   onChange: (data: Record<string, unknown>) => void;
 }
 
-export function ActionPanel({ data: rawData, onChange }: ActionPanelProps) {
+export function ActionPanel({
+  data: rawData,
+  customFields,
+  onChange,
+}: ActionPanelProps) {
   const data = rawData as ActionPanelData;
   const actionType = data.actionType || "addTag";
 
@@ -47,7 +58,13 @@ export function ActionPanel({ data: rawData, onChange }: ActionPanelProps) {
     case "removeTag":
       return <TagConfig data={data} onChange={onChange} />;
     case "setCustomField":
-      return <SetFieldConfig data={data} onChange={onChange} />;
+      return (
+        <SetFieldConfig
+          data={data}
+          customFields={customFields}
+          onChange={onChange}
+        />
+      );
     case "httpRequest":
       return <HttpRequestConfig data={data} onChange={onChange} />;
     case "goToFlow":
@@ -100,20 +117,41 @@ function TagConfig({ data, onChange }: ActionSubPanelProps) {
 }
 
 /* ───────── Set Custom Field Config ───────── */
-function SetFieldConfig({ data, onChange }: ActionSubPanelProps) {
+function SetFieldConfig({
+  data,
+  customFields,
+  onChange,
+}: ActionSubPanelProps & { customFields: CustomFieldOption[] }) {
+  const selectedFieldExists = customFields.some(
+    (field) => field.slug === data.fieldSlug
+  );
+
   return (
     <div className="space-y-4">
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Field Name (slug)
+          Custom Field
         </label>
-        <input
-          type="text"
+        <select
           value={data.fieldSlug || ""}
           onChange={(e) => onChange({ ...data, fieldSlug: e.target.value })}
-          placeholder="e.g. favorite_color"
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-        />
+          disabled={customFields.length === 0}
+          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <option value="">
+            {customFields.length === 0
+              ? "No custom fields available"
+              : "Select a custom field"}
+          </option>
+          {data.fieldSlug && !selectedFieldExists && (
+            <option value={data.fieldSlug}>{data.fieldSlug} (not found)</option>
+          )}
+          {customFields.map((field) => (
+            <option key={field.id} value={field.slug}>
+              {field.name} ({field.slug})
+            </option>
+          ))}
+        </select>
       </div>
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">

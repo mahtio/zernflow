@@ -10,12 +10,19 @@ export default async function FlowEditorPage({
   const { flowId } = await params;
   const { workspace, supabase } = await getWorkspace();
 
-  const { data: flow } = await supabase
-    .from("flows")
-    .select("*")
-    .eq("id", flowId)
-    .eq("workspace_id", workspace.id)
-    .single();
+  const [{ data: flow }, { data: customFields }] = await Promise.all([
+    supabase
+      .from("flows")
+      .select("*")
+      .eq("id", flowId)
+      .eq("workspace_id", workspace.id)
+      .single(),
+    supabase
+      .from("custom_field_definitions")
+      .select("id, name, slug")
+      .eq("workspace_id", workspace.id)
+      .order("name"),
+  ]);
 
   if (!flow) {
     notFound();
@@ -23,7 +30,7 @@ export default async function FlowEditorPage({
 
   return (
     <div className="flex h-full flex-col">
-      <FlowCanvas flow={flow} />
+      <FlowCanvas flow={flow} customFields={customFields ?? []} />
     </div>
   );
 }

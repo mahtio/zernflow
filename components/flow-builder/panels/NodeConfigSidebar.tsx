@@ -12,10 +12,17 @@ import { DelayPanel } from "./DelayPanel";
 import { ActionPanel } from "./ActionPanel";
 import { AiResponsePanel } from "./AiResponsePanel";
 
+interface CustomFieldOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface NodeConfigSidebarProps {
   node: Node;
   nodes: Node[];
   edges: Edge[];
+  customFields: CustomFieldOption[];
   onChange: (nodeId: string, data: Record<string, unknown>) => void;
   onClose: () => void;
   onDelete: (nodeId: string) => void;
@@ -112,7 +119,15 @@ const nodeTypeConfig: Record<string, { label: string; icon: typeof Cog; color: s
   },
 };
 
-export function NodeConfigSidebar({ node, nodes, edges, onChange, onClose, onDelete }: NodeConfigSidebarProps) {
+export function NodeConfigSidebar({
+  node,
+  nodes,
+  edges,
+  customFields,
+  onChange,
+  onClose,
+  onDelete,
+}: NodeConfigSidebarProps) {
   const nodeType = node.type || "action";
   const config = nodeTypeConfig[nodeType] || nodeTypeConfig.action;
   const Icon = config.icon;
@@ -162,7 +177,13 @@ export function NodeConfigSidebar({ node, nodes, edges, onChange, onClose, onDel
       case "aiResponse":
         return <AiResponsePanel data={data} onChange={handleChange} />;
       case "action":
-        return <ActionPanel data={data} onChange={handleChange} />;
+        return (
+          <ActionPanel
+            data={data}
+            customFields={customFields}
+            onChange={handleChange}
+          />
+        );
       default:
         return (
           <p className="text-sm text-muted-foreground">

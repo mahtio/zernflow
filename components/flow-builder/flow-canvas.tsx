@@ -37,6 +37,10 @@ import { VersionHistoryPanel } from "./panels/VersionHistoryPanel";
 import { TestPanel } from "./panels/TestPanel";
 
 type Flow = Database["public"]["Tables"]["flows"]["Row"];
+type CustomFieldDefinition = Pick<
+  Database["public"]["Tables"]["custom_field_definitions"]["Row"],
+  "id" | "name" | "slug"
+>;
 
 const nodeTypes: NodeTypes = {
   trigger: TriggerNode,
@@ -49,6 +53,7 @@ const nodeTypes: NodeTypes = {
 
 interface FlowCanvasProps {
   flow: Flow;
+  customFields: CustomFieldDefinition[];
 }
 
 let nodeId = 0;
@@ -75,7 +80,7 @@ function getDefaultData(type: string, actionType?: string): Record<string, unkno
   }
 }
 
-function FlowCanvasInner({ flow }: FlowCanvasProps) {
+function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
   const router = useRouter();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
@@ -473,6 +478,7 @@ function FlowCanvasInner({ flow }: FlowCanvasProps) {
             node={selectedNode}
             nodes={nodes}
             edges={edges}
+            customFields={customFields}
             onChange={onNodeDataChange}
             onClose={closeSidebar}
             onDelete={deleteNode}
@@ -503,10 +509,10 @@ function FlowCanvasInner({ flow }: FlowCanvasProps) {
   );
 }
 
-export function FlowCanvas({ flow }: FlowCanvasProps) {
+export function FlowCanvas({ flow, customFields }: FlowCanvasProps) {
   return (
     <ReactFlowProvider>
-      <FlowCanvasInner flow={flow} />
+      <FlowCanvasInner flow={flow} customFields={customFields} />
     </ReactFlowProvider>
   );
 }
