@@ -22,6 +22,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Save, Rocket, Loader2, History, Play, Download, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useLocale } from "@/components/locale-provider";
 import { createClient } from "@/lib/supabase/client";
 import type { Database, FlowStatus, Json } from "@/lib/types/database";
 
@@ -84,6 +85,8 @@ function getDefaultData(type: string, actionType?: string): Record<string, unkno
 
 function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
   const router = useRouter();
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const { screenToFlowPosition } = useReactFlow();
   const supabase = createClient();
@@ -310,7 +313,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
-            Back
+            {pt ? "Voltar" : "Back"}
           </button>
           <div className="h-5 w-px bg-border" />
           <input
@@ -319,7 +322,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             onChange={(e) => setFlowName(e.target.value)}
             className="w-auto max-w-[200px] border-none bg-transparent text-sm font-semibold outline-none focus:ring-0"
             style={{ width: `${Math.max(flowName.length, 8)}ch` }}
-            placeholder="Flow name"
+            placeholder={pt ? "Nome do fluxo" : "Flow name"}
           />
           <span
             className={cn(
@@ -331,7 +334,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
                   : "bg-muted text-muted-foreground"
             )}
           >
-            {flow.status}
+            {pt ? ({ draft: "rascunho", published: "publicado", archived: "arquivado" }[flow.status as FlowStatus] ?? flow.status) : flow.status}
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -342,7 +345,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
           )}
           {!saveError && lastSaved && (
             <span className="text-xs text-muted-foreground">
-              Saved {lastSaved.toLocaleTimeString()}
+              {pt ? "Salvo" : "Saved"} {lastSaved.toLocaleTimeString(locale)}
             </span>
           )}
           <button
@@ -361,7 +364,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             )}
           >
             <Play className="h-3.5 w-3.5" />
-            Test
+            {pt ? "Testar" : "Test"}
           </button>
           <button
             onClick={() => {
@@ -379,7 +382,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             )}
           >
             <History className="h-3.5 w-3.5" />
-            History
+            {pt ? "Histórico" : "History"}
           </button>
           <button
             onClick={() => {
@@ -403,7 +406,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium hover:bg-accent transition-colors"
           >
             <Download className="h-3.5 w-3.5" />
-            Export
+            {pt ? "Exportar" : "Export"}
           </button>
           <button
             onClick={handleSave}
@@ -415,7 +418,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             ) : (
               <Save className="h-3.5 w-3.5" />
             )}
-            Save
+            {pt ? "Salvar" : "Save"}
           </button>
           <button
             onClick={handlePublish}
@@ -427,13 +430,13 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             ) : (
               <Rocket className="h-3.5 w-3.5" />
             )}
-            Publish
+            {pt ? "Publicar" : "Publish"}
           </button>
           <button
             onClick={() => setConfirmDelete(true)}
             disabled={deleting}
             className="rounded-lg p-2 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-            title="Delete flow"
+            title={pt ? "Excluir fluxo" : "Delete flow"}
           >
             {deleting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -443,9 +446,10 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
           </button>
           <ConfirmDialog
             open={confirmDelete}
-            title="Delete flow"
-            message={`"${flowName}" and its triggers, versions, and run history will be permanently deleted. This cannot be undone.`}
-            confirmLabel="Delete"
+            title={pt ? "Excluir fluxo" : "Delete flow"}
+            message={pt ? `"${flowName}" e seus gatilhos, versões e histórico de execuções serão excluídos permanentemente. Esta ação não pode ser desfeita.` : `"${flowName}" and its triggers, versions, and run history will be permanently deleted. This cannot be undone.`}
+            confirmLabel={pt ? "Excluir" : "Delete"}
+            cancelLabel={pt ? "Cancelar" : "Cancel"}
             destructive
             onConfirm={() => {
               setConfirmDelete(false);

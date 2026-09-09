@@ -91,9 +91,12 @@ export function FlowsView({
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {flows.map((flow) => {
               const nodeCount = Array.isArray(flow.nodes) ? flow.nodes.length : 0;
+              const displayName = locale === "pt-BR" && flow.name === "Untitled Flow"
+                ? "Fluxo sem título"
+                : flow.name;
               return (
                 <Link key={flow.id} href={`/dashboard/flows/${flow.id}`} className="group rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/50">
-                  <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted"><GitBranch className="h-4 w-4 text-muted-foreground" /></div><div><div className="flex items-center gap-2"><h3 className="font-medium transition-colors group-hover:text-primary">{flow.name}</h3><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${statusClasses[flow.status]}`}>{statusLabel[flow.status]}</span></div><p className="text-xs text-muted-foreground">{nodeCount} {nodeCount === 1 ? copy.node : copy.nodes}</p></div></div><div className="flex items-center gap-1"><ExportFlowButton flow={flow} /><DeleteFlowButton flow={flow} /></div></div>
+                  <div className="flex items-start justify-between gap-3"><div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted"><GitBranch className="h-4 w-4 text-muted-foreground" /></div><div><div className="flex items-center gap-2"><h3 className="font-medium transition-colors group-hover:text-primary">{displayName}</h3><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${statusClasses[flow.status]}`}>{statusLabel[flow.status]}</span></div><p className="text-xs text-muted-foreground">{nodeCount} {nodeCount === 1 ? copy.node : copy.nodes}</p></div></div><div className="flex items-center gap-1"><ExportFlowButton flow={flow} /><DeleteFlowButton flow={flow} /></div></div>
                   <p className="mt-4 text-xs text-muted-foreground">{copy.updated} {new Date(flow.updated_at).toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" })}</p>
                 </Link>
               );

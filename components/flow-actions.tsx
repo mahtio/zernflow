@@ -130,6 +130,7 @@ export function DeleteFlowButton({
         title={locale === "pt-BR" ? "Excluir fluxo" : "Delete flow"}
         message={locale === "pt-BR" ? `"${flow.name}" e seus gatilhos, versões e histórico de execuções serão excluídos permanentemente. Esta ação não pode ser desfeita.` : `"${flow.name}" and its triggers, versions, and run history will be permanently deleted. This cannot be undone.`}
         confirmLabel={locale === "pt-BR" ? "Excluir" : "Delete"}
+        cancelLabel={locale === "pt-BR" ? "Cancelar" : "Cancel"}
         destructive
         onConfirm={() => {
           setConfirmOpen(false);
