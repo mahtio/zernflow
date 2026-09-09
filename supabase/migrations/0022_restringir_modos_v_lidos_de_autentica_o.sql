@@ -1,0 +1,1 @@
+ALTER TABLE public.workspace_invites ADD CONSTRAINT workspace_invites_auth_mode_check CHECK (auth_mode IN ('login', 'register'));

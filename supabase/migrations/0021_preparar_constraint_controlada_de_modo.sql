@@ -1,0 +1,1 @@
+ALTER TABLE public.workspace_invites DROP CONSTRAINT IF EXISTS workspace_invites_auth_mode_check;

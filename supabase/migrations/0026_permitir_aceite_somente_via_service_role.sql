@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.accept_workspace_invite(uuid, uuid, text) TO service_role;

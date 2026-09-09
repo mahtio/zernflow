@@ -1,0 +1,1 @@
+ALTER TABLE public.workspace_invites ADD COLUMN IF NOT EXISTS auth_mode text;

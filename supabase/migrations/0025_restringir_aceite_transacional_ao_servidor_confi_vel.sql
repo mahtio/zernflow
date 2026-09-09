@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.accept_workspace_invite(uuid, uuid, text) FROM PUBLIC, anon, authenticated;
