@@ -198,33 +198,60 @@ export function SettingsView({
           <section>
             <div className="flex items-center gap-2">
               <Key className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">Zernio API Key</h2>
+              <h2 className="text-sm font-semibold">{pt ? "Chave da API Zernio" : "Zernio API Key"}</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
               {pt ? "Sua chave da API Zernio é usada para conectar plataformas de redes sociais." : "Your Zernio API key is used to connect with social media platforms."}
               {workspace.hasApiKey && (pt ? " Uma chave está configurada no momento." : " A key is currently configured.")}
             </p>
             <p className="mt-1.5 text-xs text-muted-foreground">
-              You can get your API key from your{" "}
-              <a
-                href="https://zernio.com/dashboard/settings/api"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-0.5 text-primary underline underline-offset-2 hover:opacity-80"
-              >
-                Zernio dashboard
-                <ExternalLink className="h-3 w-3" />
-              </a>
-              . Sign up at{" "}
-              <a
-                href="https://zernio.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary underline underline-offset-2 hover:opacity-80"
-              >
-                zernio.com
-              </a>{" "}
-              if you don&apos;t have an account yet.
+              {pt ? (
+                <>
+                  Você pode obter sua chave no{" "}
+                  <a
+                    href="https://zernio.com/dashboard/settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 text-primary underline underline-offset-2 hover:opacity-80"
+                  >
+                    painel da Zernio
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  . Cadastre-se em{" "}
+                  <a
+                    href="https://zernio.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary underline underline-offset-2 hover:opacity-80"
+                  >
+                    zernio.com
+                  </a>{" "}
+                  se ainda não tiver uma conta.
+                </>
+              ) : (
+                <>
+                  You can get your API key from your{" "}
+                  <a
+                    href="https://zernio.com/dashboard/settings/api"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 text-primary underline underline-offset-2 hover:opacity-80"
+                  >
+                    Zernio dashboard
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                  . Sign up at{" "}
+                  <a
+                    href="https://zernio.com"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary underline underline-offset-2 hover:opacity-80"
+                  >
+                    zernio.com
+                  </a>{" "}
+                  if you don&apos;t have an account yet.
+                </>
+              )}
             </p>
 
             <div className="mt-4 relative">

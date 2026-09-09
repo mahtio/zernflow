@@ -633,15 +633,16 @@ export function GrowthView({
                         {/* Reply text preview */}
                         {config.replyText && (
                           <p className="mt-1 text-xs text-muted-foreground/60">
-                            Public reply: &ldquo;{config.replyText}&rdquo;
+                            {pt ? "Resposta pública" : "Public reply"}: &ldquo;{config.replyText}&rdquo;
                           </p>
                         )}
 
                         {/* Post IDs */}
                         {config.postIds?.length ? (
                           <p className="mt-1 text-xs text-muted-foreground/60">
-                            Limited to {config.postIds.length} post
-                            {config.postIds.length !== 1 ? "s" : ""}
+                            {pt
+                              ? `Limitado a ${config.postIds.length} postagem${config.postIds.length !== 1 ? "s" : ""}`
+                              : `Limited to ${config.postIds.length} post${config.postIds.length !== 1 ? "s" : ""}`}
                           </p>
                         ) : null}
                       </div>
@@ -651,7 +652,7 @@ export function GrowthView({
                         <button
                           onClick={() => handleStartEdit(trigger)}
                           className="rounded-lg p-2 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
-                          title="Edit rule"
+                          title={pt ? "Editar regra" : "Edit rule"}
                         >
                           <Pencil className="h-4 w-4" />
                         </button>
@@ -661,11 +662,13 @@ export function GrowthView({
                           className={cn(
                             "rounded-lg p-2 transition-colors",
                             trigger.is_active
-                              ? "text-green-600 hover:bg-green-50"
+                              ? "text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
                               : "text-muted-foreground/60 hover:bg-muted"
                           )}
                           title={
-                            trigger.is_active ? "Pause rule" : "Activate rule"
+                            trigger.is_active
+                              ? (pt ? "Pausar regra" : "Pause rule")
+                              : (pt ? "Ativar regra" : "Activate rule")
                           }
                         >
                           {trigger.is_active ? (
@@ -677,8 +680,8 @@ export function GrowthView({
                         <button
                           onClick={() => handleDelete(trigger.id)}
                           disabled={deletingId === trigger.id}
-                          className="rounded-lg p-2 text-muted-foreground/60 transition-colors hover:bg-red-50 hover:text-red-600"
-                          title="Delete rule"
+                          className="rounded-lg p-2 text-muted-foreground/60 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30"
+                          title={pt ? "Excluir regra" : "Delete rule"}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -695,10 +698,10 @@ export function GrowthView({
         {recentLogs.length > 0 && (
           <div className="mt-8">
             <h2 className="text-lg font-semibold text-foreground">
-              Recent Activity
+              {pt ? "Atividade recente" : "Recent Activity"}
             </h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Latest processed comments and their outcomes.
+              {pt ? "Últimos comentários processados e seus resultados." : "Latest processed comments and their outcomes."}
             </p>
 
             <div className="mt-4 overflow-hidden rounded-xl border border-border">
@@ -706,19 +709,19 @@ export function GrowthView({
                 <thead>
                   <tr className="border-b border-border bg-muted">
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
-                      Author
+                      {pt ? "Autor" : "Author"}
                     </th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
-                      Comment
+                      {pt ? "Comentário" : "Comment"}
                     </th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
-                      Matched
+                      {pt ? "Correspondido" : "Matched"}
                     </th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
                       DM
                     </th>
                     <th className="px-4 py-3 text-xs font-medium text-muted-foreground">
-                      Time
+                      {pt ? "Horário" : "Time"}
                     </th>
                   </tr>
                 </thead>
@@ -730,7 +733,7 @@ export function GrowthView({
                     >
                       <td className="px-4 py-3">
                         <p className="text-sm font-medium text-foreground">
-                          {log.author_name || log.author_username || "Unknown"}
+                          {log.author_name || log.author_username || (pt ? "Desconhecido" : "Unknown")}
                         </p>
                         {log.author_username && (
                           <p className="text-xs text-muted-foreground/60">
@@ -743,26 +746,26 @@ export function GrowthView({
                       </td>
                       <td className="px-4 py-3">
                         {log.matched_trigger_id ? (
-                          <span className="inline-flex rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-medium text-green-700">
-                            Yes
+                          <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                            {pt ? "Sim" : "Yes"}
                           </span>
                         ) : (
                           <span className="inline-flex rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                            No
+                            {pt ? "Não" : "No"}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3">
                         {log.dm_sent ? (
-                          <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700">
-                            Sent
+                          <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+                            {pt ? "Enviada" : "Sent"}
                           </span>
                         ) : log.error ? (
                           <span
-                            className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700"
+                            className="inline-flex rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700 dark:bg-red-950 dark:text-red-300"
                             title={log.error}
                           >
-                            Error
+                            {pt ? "Erro" : "Error"}
                           </span>
                         ) : (
                           <span className="text-xs text-muted-foreground/60">

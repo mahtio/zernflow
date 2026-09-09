@@ -4,6 +4,7 @@ import { useCallback, useState, type FormEvent } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useLocale } from "@/components/locale-provider";
 import type { NodeType } from "@/lib/types/database";
 import { EnrollSequencePanel } from "./EnrollSequencePanel";
 
@@ -55,6 +56,8 @@ export function ActionPanel({
   onCustomFieldCreated,
   onChange,
 }: ActionPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const data = rawData as ActionPanelData;
   const actionType = data.actionType || "addTag";
 
@@ -90,7 +93,7 @@ export function ActionPanel({
     default:
       return (
         <p className="text-sm text-muted-foreground">
-          No configuration available for this action type.
+          {pt ? "Não há configuração disponível para este tipo de ação." : "No configuration available for this action type."}
         </p>
       );
   }
@@ -98,25 +101,27 @@ export function ActionPanel({
 
 /* ───────── Tag Config ───────── */
 function TagConfig({ data, onChange }: ActionSubPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const isAdd = data.actionType === "addTag";
 
   return (
     <div className="space-y-4">
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Tag Name
+          {pt ? "Nome da etiqueta" : "Tag Name"}
         </label>
         <input
           type="text"
           value={data.tagName || ""}
           onChange={(e) => onChange({ ...data, tagName: e.target.value })}
-          placeholder="Enter tag name..."
+          placeholder={pt ? "Digite o nome da etiqueta..." : "Enter tag name..."}
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <p className="mt-1.5 text-xs text-muted-foreground">
           {isAdd
-            ? "This tag will be added to the contact when they reach this step."
-            : "This tag will be removed from the contact when they reach this step."}
+            ? (pt ? "Esta etiqueta será adicionada ao contato quando ele alcançar esta etapa." : "This tag will be added to the contact when they reach this step.")
+            : (pt ? "Esta etiqueta será removida do contato quando ele alcançar esta etapa." : "This tag will be removed from the contact when they reach this step.")}
         </p>
       </div>
     </div>
@@ -125,15 +130,6 @@ function TagConfig({ data, onChange }: ActionSubPanelProps) {
 
 /* ───────── Set Custom Field Config ───────── */
 type CustomFieldType = "text" | "number" | "boolean" | "date" | "url" | "email";
-
-const customFieldTypes: Array<{ value: CustomFieldType; label: string }> = [
-  { value: "text", label: "Text" },
-  { value: "number", label: "Number" },
-  { value: "boolean", label: "Yes / No" },
-  { value: "date", label: "Date" },
-  { value: "url", label: "URL" },
-  { value: "email", label: "Email" },
-];
 
 function createFieldSlug(name: string) {
   return name
@@ -156,11 +152,23 @@ function SetFieldConfig({
   customFields: CustomFieldOption[];
   onCustomFieldCreated: (field: CustomFieldOption) => void;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [fieldName, setFieldName] = useState("");
   const [fieldType, setFieldType] = useState<CustomFieldType>("text");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+
+  const customFieldTypes: Array<{ value: CustomFieldType; label: string }> = [
+    { value: "text", label: pt ? "Texto" : "Text" },
+    { value: "number", label: pt ? "Número" : "Number" },
+    { value: "boolean", label: pt ? "Sim / Não" : "Yes / No" },
+    { value: "date", label: pt ? "Data" : "Date" },
+    { value: "url", label: "URL" },
+    { value: "email", label: pt ? "E-mail" : "Email" },
+  ];
+
   const selectedFieldExists = customFields.some(
     (field) => field.slug === data.fieldSlug
   );
@@ -196,8 +204,8 @@ function SetFieldConfig({
     if (error || !createdField) {
       setCreateError(
         error?.code === "23505"
-          ? "A custom field with this name already exists."
-          : error?.message || "Could not create the custom field."
+          ? (pt ? "Já existe um campo personalizado com este nome." : "A custom field with this name already exists.")
+          : error?.message || (pt ? "Não foi possível criar o campo personalizado." : "Could not create the custom field.")
       );
       setCreating(false);
       return;
@@ -217,7 +225,7 @@ function SetFieldConfig({
       <div className="space-y-4">
         <div>
           <label className="mb-2 block text-xs font-semibold text-foreground">
-            Custom Field
+            {pt ? "Campo personalizado" : "Custom Field"}
           </label>
           <select
             value={data.fieldSlug || ""}
@@ -230,31 +238,31 @@ function SetFieldConfig({
             }}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
           >
-            <option value="">Select a custom field</option>
+            <option value="">{pt ? "Selecione um campo personalizado" : "Select a custom field"}</option>
             {data.fieldSlug && !selectedFieldExists && (
-              <option value={data.fieldSlug}>{data.fieldSlug} (not found)</option>
+              <option value={data.fieldSlug}>{data.fieldSlug} ({pt ? "não encontrado" : "not found"})</option>
             )}
             {customFields.map((field) => (
               <option key={field.id} value={field.slug}>
                 {field.name} ({field.slug})
               </option>
             ))}
-            <option value="__add_field__">+ Add custom field</option>
+            <option value="__add_field__">{pt ? "+ Adicionar campo personalizado" : "+ Add custom field"}</option>
           </select>
         </div>
         <div>
           <label className="mb-2 block text-xs font-semibold text-foreground">
-            Value
+            {pt ? "Valor" : "Value"}
           </label>
           <input
             type="text"
             value={data.value || ""}
             onChange={(e) => onChange({ ...data, value: e.target.value })}
-            placeholder="Value or {{variable}}"
+            placeholder={pt ? "Valor ou {{variavel}}" : "Value or {{variable}}"}
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
           />
           <p className="mt-1.5 text-[11px] text-muted-foreground/60">
-            Use {"{{variable}}"} for dynamic values
+            {pt ? "Use {{variavel}} para valores dinâmicos" : "Use {{variable}} for dynamic values"}
           </p>
         </div>
       </div>
@@ -263,7 +271,7 @@ function SetFieldConfig({
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button
             type="button"
-            aria-label="Close modal"
+            aria-label={pt ? "Fechar modal" : "Close modal"}
             className="absolute inset-0 bg-black/60"
             onClick={closeCreateModal}
           />
@@ -280,10 +288,10 @@ function SetFieldConfig({
                   id="create-custom-field-title"
                   className="text-base font-semibold text-foreground"
                 >
-                  Add custom field
+                  {pt ? "Adicionar campo personalizado" : "Add custom field"}
                 </h3>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Create a field and select the kind of value it stores.
+                  {pt ? "Crie um campo e selecione o tipo de dado que ele armazenará." : "Create a field and select the kind of value it stores."}
                 </p>
               </div>
               <button
@@ -299,14 +307,14 @@ function SetFieldConfig({
             <div className="mt-5 space-y-4">
               <div>
                 <label className="mb-2 block text-xs font-semibold text-foreground">
-                  Field name
+                  {pt ? "Nome do campo" : "Field name"}
                 </label>
                 <input
                   autoFocus
                   type="text"
                   value={fieldName}
                   onChange={(e) => setFieldName(e.target.value)}
-                  placeholder="e.g. Birth city"
+                  placeholder={pt ? "Ex: Cidade de nascimento" : "e.g. Birth city"}
                   disabled={creating}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
                 />
@@ -319,7 +327,7 @@ function SetFieldConfig({
 
               <div>
                 <label className="mb-2 block text-xs font-semibold text-foreground">
-                  Field type
+                  {pt ? "Tipo do campo" : "Field type"}
                 </label>
                 <select
                   value={fieldType}
@@ -349,7 +357,7 @@ function SetFieldConfig({
                 disabled={creating}
                 className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
               >
-                Cancel
+                {pt ? "Cancelar" : "Cancel"}
               </button>
               <button
                 type="submit"
@@ -357,7 +365,7 @@ function SetFieldConfig({
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-                Add field
+                {pt ? "Adicionar campo" : "Add field"}
               </button>
             </div>
           </form>
@@ -369,6 +377,8 @@ function SetFieldConfig({
 
 /* ───────── HTTP Request Config ───────── */
 function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const headers = data.headers || {};
   const headerEntries = Object.entries(headers);
 
@@ -408,7 +418,7 @@ function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
       {/* Method + URL */}
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Request
+          {pt ? "Requisição" : "Request"}
         </label>
         <div className="flex gap-2">
           <select
@@ -434,14 +444,14 @@ function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
       {/* Headers */}
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs font-semibold text-foreground">Headers</label>
+          <label className="text-xs font-semibold text-foreground">{pt ? "Cabeçalhos (Headers)" : "Headers"}</label>
           <button
             type="button"
             onClick={addHeader}
             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground hover:bg-muted"
           >
             <Plus className="h-3 w-3" />
-            Add
+            {pt ? "Adicionar" : "Add"}
           </button>
         </div>
         {headerEntries.map(([key, value], i) => (
@@ -450,14 +460,14 @@ function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
               type="text"
               value={key}
               onChange={(e) => updateHeaderKey(key, e.target.value)}
-              placeholder="Key"
+              placeholder={pt ? "Chave" : "Key"}
               className="flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             />
             <input
               type="text"
               value={value}
               onChange={(e) => updateHeaderValue(key, e.target.value)}
-              placeholder="Value"
+              placeholder={pt ? "Valor" : "Value"}
               className="flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
             />
             <button
@@ -475,7 +485,7 @@ function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
       {(data.method === "POST" || data.method === "PUT") && (
         <div>
           <label className="mb-2 block text-xs font-semibold text-foreground">
-            Request Body (JSON)
+            {pt ? "Corpo da requisição (JSON)" : "Request Body (JSON)"}
           </label>
           <textarea
             value={data.body || ""}
@@ -490,7 +500,7 @@ function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
       {/* Response Variable */}
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Save response to variable
+          {pt ? "Salvar resposta na variável" : "Save response to variable"}
         </label>
         <input
           type="text"
@@ -500,7 +510,7 @@ function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <p className="mt-1.5 text-xs text-muted-foreground">
-          Optional. Store the response body in a variable for later use.
+          {pt ? "Opcional. Armazena o corpo da resposta em uma variável para uso posterior." : "Optional. Store the response body in a variable for later use."}
         </p>
       </div>
     </div>
@@ -509,21 +519,24 @@ function HttpRequestConfig({ data, onChange }: ActionSubPanelProps) {
 
 /* ───────── Go To Flow Config ───────── */
 function GoToFlowConfig({ data, onChange }: ActionSubPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+
   return (
     <div className="space-y-4">
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Target Flow ID
+          {pt ? "ID do fluxo de destino" : "Target Flow ID"}
         </label>
         <input
           type="text"
           value={data.flowId || ""}
           onChange={(e) => onChange({ ...data, flowId: e.target.value })}
-          placeholder="Enter flow ID..."
+          placeholder={pt ? "Digite o ID do fluxo..." : "Enter flow ID..."}
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <p className="mt-1.5 text-xs text-muted-foreground">
-          The contact will be redirected to this flow.
+          {pt ? "O contato será redirecionado para este fluxo." : "The contact will be redirected to this flow."}
         </p>
       </div>
 
@@ -535,12 +548,12 @@ function GoToFlowConfig({ data, onChange }: ActionSubPanelProps) {
             onChange={(e) => onChange({ ...data, returnAfter: e.target.checked })}
             className="peer sr-only"
           />
-          <div className="peer h-5 w-9 rounded-full bg-muted after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-card after:transition-all peer-checked:bg-muted0 peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-ring" />
+          <div className="peer h-5 w-9 rounded-full bg-muted after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-card after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-ring" />
         </label>
         <div>
-          <p className="text-sm font-medium text-foreground">Return after</p>
+          <p className="text-sm font-medium text-foreground">{pt ? "Retornar após a conclusão" : "Return after"}</p>
           <p className="text-xs text-muted-foreground">
-            Come back to this flow after the target flow completes
+            {pt ? "Voltar para este fluxo após o término do fluxo de destino" : "Come back to this flow after the target flow completes"}
           </p>
         </div>
       </div>
@@ -550,18 +563,20 @@ function GoToFlowConfig({ data, onChange }: ActionSubPanelProps) {
 
 /* ───────── Subscribe / Unsubscribe Config ───────── */
 function SubscribeConfig({ data, onChange }: ActionSubPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const isSubscribe = data.actionType === "subscribe";
 
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border bg-muted p-4">
         <p className="text-sm font-medium text-foreground">
-          {isSubscribe ? "Subscribe Contact" : "Unsubscribe Contact"}
+          {isSubscribe ? (pt ? "Inscrever contato" : "Subscribe Contact") : (pt ? "Cancelar inscrição do contato" : "Unsubscribe Contact")}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {isSubscribe
-            ? "This will mark the contact as subscribed. They will receive broadcasts and automated messages."
-            : "This will mark the contact as unsubscribed. They will stop receiving broadcasts and most automated messages."}
+            ? (pt ? "Isso marcará o contato como inscrito. Ele receberá transmissões e mensagens automatizadas." : "This will mark the contact as subscribed. They will receive broadcasts and automated messages.")
+            : (pt ? "Isso marcará o contato como cancelado. Ele deixará de receber transmissões e a maioria das automações." : "This will mark the contact as unsubscribed. They will stop receiving broadcasts and most automated messages.")}
         </p>
       </div>
 
@@ -573,12 +588,12 @@ function SubscribeConfig({ data, onChange }: ActionSubPanelProps) {
             onChange={(e) => onChange({ ...data, confirmed: e.target.checked })}
             className="peer sr-only"
           />
-          <div className="peer h-5 w-9 rounded-full bg-muted after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-card after:transition-all peer-checked:bg-muted0 peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-ring" />
+          <div className="peer h-5 w-9 rounded-full bg-muted after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-card after:transition-all peer-checked:bg-primary peer-checked:after:translate-x-full peer-focus:ring-2 peer-focus:ring-ring" />
         </label>
         <div>
-          <p className="text-sm font-medium text-foreground">I confirm this action</p>
+          <p className="text-sm font-medium text-foreground">{pt ? "Confirmo esta ação" : "I confirm this action"}</p>
           <p className="text-xs text-muted-foreground">
-            This action will affect the contact&apos;s subscription status
+            {pt ? "Esta ação afetará o status de inscrição do contato" : "This action will affect the contact's subscription status"}
           </p>
         </div>
       </div>
@@ -588,28 +603,33 @@ function SubscribeConfig({ data, onChange }: ActionSubPanelProps) {
 
 /* ───────── Human Takeover Config ───────── */
 function HumanTakeoverConfig({ data, onChange }: ActionSubPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border bg-muted p-4">
-        <p className="text-sm font-medium text-foreground">Hand off to a human agent</p>
+        <p className="text-sm font-medium text-foreground">{pt ? "Transferir para atendimento humano" : "Hand off to a human agent"}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          The flow will pause and the conversation will be marked for human takeover. Automation will stop until an agent resumes it.
+          {pt
+            ? "O fluxo será pausado e a conversa será marcada para atendimento humano. As automações pararão até que um atendente as retome."
+            : "The flow will pause and the conversation will be marked for human takeover. Automation will stop until an agent resumes it."}
         </p>
       </div>
 
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Internal note (optional)
+          {pt ? "Nota interna (opcional)" : "Internal note (optional)"}
         </label>
         <textarea
           value={data.message || ""}
           onChange={(e) => onChange({ ...data, message: e.target.value })}
-          placeholder="Add context for the agent..."
+          placeholder={pt ? "Adicione contexto para o atendente..." : "Add context for the agent..."}
           rows={3}
           className="w-full resize-none rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
         />
         <p className="mt-1.5 text-xs text-muted-foreground">
-          This message will be visible to agents as an internal note.
+          {pt ? "Esta mensagem ficará visível aos atendentes como uma nota interna." : "This message will be visible to agents as an internal note."}
         </p>
       </div>
     </div>
@@ -618,6 +638,8 @@ function HumanTakeoverConfig({ data, onChange }: ActionSubPanelProps) {
 
 /* ───────── A/B Split Config ───────── */
 function ABSplitConfig({ data, onChange }: ActionSubPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const paths = data.paths || [
     { name: "A", weight: 50 },
     { name: "B", weight: 50 },
@@ -662,14 +684,14 @@ function ABSplitConfig({ data, onChange }: ActionSubPanelProps) {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label className="text-xs font-semibold text-foreground">
-            Traffic Distribution
+            {pt ? "Distribuição de tráfego" : "Traffic Distribution"}
           </label>
           <button
             type="button"
             onClick={distributeEvenly}
             className="text-[11px] font-medium text-muted-foreground hover:text-foreground"
           >
-            Distribute evenly
+            {pt ? "Distribuir igualmente" : "Distribute evenly"}
           </button>
         </div>
         <div className="flex h-3 overflow-hidden rounded-full bg-muted">
@@ -692,7 +714,7 @@ function ABSplitConfig({ data, onChange }: ActionSubPanelProps) {
         </div>
         {totalWeight !== 100 && (
           <p className="mt-1 text-[11px] font-medium text-red-500">
-            Total is {totalWeight}% (should be 100%)
+            {pt ? `O total é ${totalWeight}% (deve somar 100%)` : `Total is ${totalWeight}% (should be 100%)`}
           </p>
         )}
       </div>
@@ -755,7 +777,7 @@ function ABSplitConfig({ data, onChange }: ActionSubPanelProps) {
           className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-muted-foreground hover:text-muted-foreground"
         >
           <Plus className="h-3.5 w-3.5" />
-          Add Path
+          {pt ? "Adicionar caminho" : "Add Path"}
         </button>
       )}
     </div>
@@ -764,18 +786,23 @@ function ABSplitConfig({ data, onChange }: ActionSubPanelProps) {
 
 /* ───────── Smart Delay Config ───────── */
 function SmartDelayConfig({ data, onChange }: ActionSubPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-border bg-muted p-4">
-        <p className="text-sm font-medium text-foreground">Smart Delay</p>
+        <p className="text-sm font-medium text-foreground">{pt ? "Atraso inteligente" : "Smart Delay"}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Pause the flow and wait for a user response. If no response is received within the timeout, continue to the next step.
+          {pt
+            ? "Pausa o fluxo e aguarda uma resposta do usuário. Se nenhuma resposta for recebida dentro do tempo limite, continua para a próxima etapa."
+            : "Pause the flow and wait for a user response. If no response is received within the timeout, continue to the next step."}
         </p>
       </div>
 
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Timeout
+          {pt ? "Tempo limite (Timeout)" : "Timeout"}
         </label>
         <div className="flex gap-2">
           <input
@@ -792,13 +819,13 @@ function SmartDelayConfig({ data, onChange }: ActionSubPanelProps) {
             onChange={(e) => onChange({ ...data, timeoutUnit: e.target.value })}
             className="flex-1 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
           >
-            <option value="minutes">Minutes</option>
-            <option value="hours">Hours</option>
-            <option value="days">Days</option>
+            <option value="minutes">{pt ? "Minutos" : "Minutes"}</option>
+            <option value="hours">{pt ? "Horas" : "Hours"}</option>
+            <option value="days">{pt ? "Dias" : "Days"}</option>
           </select>
         </div>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          If the user does not respond within this time, the flow will continue.
+          {pt ? "Se o usuário não responder dentro deste período, o fluxo continuará." : "If the user does not respond within this time, the flow will continue."}
         </p>
       </div>
     </div>
