@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, Download, Loader2, GitBranch, FileJson, X, Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useLocale } from "@/components/locale-provider";
 import type { Json } from "@/lib/types/database";
 
 interface FlowExportData {
@@ -31,6 +32,8 @@ export function ExportFlowButton({
 }: {
   flow: { id: string; name: string; nodes: Json; edges: Json; description?: string | null; version?: number };
 }) {
+  const { locale } = useLocale();
+
   function handleExport(e: React.MouseEvent) {
     e.preventDefault();
     e.stopPropagation();
@@ -60,7 +63,7 @@ export function ExportFlowButton({
     <button
       onClick={handleExport}
       className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground transition-colors"
-      aria-label={`Export ${flow.name}`}
+      aria-label={locale === "pt-BR" ? `Exportar ${flow.name}` : `Export ${flow.name}`}
     >
       <Download className="h-3.5 w-3.5" />
     </button>
@@ -73,6 +76,7 @@ export function DeleteFlowButton({
   flow: { id: string; name: string };
 }) {
   const router = useRouter();
+  const { locale } = useLocale();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -86,14 +90,14 @@ export function DeleteFlowButton({
 
       if (!res.ok) {
         console.error("Failed to delete flow");
-        alert("Failed to delete flow. Please try again.");
+        alert(locale === "pt-BR" ? "Não foi possível excluir o fluxo. Tente novamente." : "Failed to delete flow. Please try again.");
         return;
       }
 
       router.refresh();
     } catch (err) {
       console.error("Failed to delete flow:", err);
-      alert("Failed to delete flow. Please try again.");
+      alert(locale === "pt-BR" ? "Não foi possível excluir o fluxo. Tente novamente." : "Failed to delete flow. Please try again.");
     } finally {
       setDeleting(false);
     }
@@ -113,7 +117,7 @@ export function DeleteFlowButton({
         onClick={() => setConfirmOpen(true)}
         disabled={deleting}
         className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground/60 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors disabled:opacity-50"
-        aria-label={`Delete ${flow.name}`}
+        aria-label={locale === "pt-BR" ? `Excluir ${flow.name}` : `Delete ${flow.name}`}
       >
         {deleting ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -123,9 +127,9 @@ export function DeleteFlowButton({
       </button>
       <ConfirmDialog
         open={confirmOpen}
-        title="Delete flow"
-        message={`"${flow.name}" and its triggers, versions, and run history will be permanently deleted. This cannot be undone.`}
-        confirmLabel="Delete"
+        title={locale === "pt-BR" ? "Excluir fluxo" : "Delete flow"}
+        message={locale === "pt-BR" ? `"${flow.name}" e seus gatilhos, versões e histórico de execuções serão excluídos permanentemente. Esta ação não pode ser desfeita.` : `"${flow.name}" and its triggers, versions, and run history will be permanently deleted. This cannot be undone.`}
+        confirmLabel={locale === "pt-BR" ? "Excluir" : "Delete"}
         destructive
         onConfirm={() => {
           setConfirmOpen(false);
@@ -139,6 +143,7 @@ export function DeleteFlowButton({
 
 export function ImportFlowButton() {
   const router = useRouter();
+  const { locale } = useLocale();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -236,7 +241,7 @@ export function ImportFlowButton() {
         ) : (
           <Upload className="h-4 w-4" />
         )}
-        {importing ? "Importing..." : "Import"}
+        {importing ? (locale === "pt-BR" ? "Importando..." : "Importing...") : (locale === "pt-BR" ? "Importar" : "Import")}
       </button>
 
       {error && (
@@ -254,7 +259,7 @@ export function ImportFlowButton() {
               <div className="min-w-0 flex-1">
                 <p className="font-medium">{preview.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {nodeCount} {nodeCount === 1 ? "node" : "nodes"} · {edgeCount} {edgeCount === 1 ? "connection" : "connections"}
+                  {nodeCount} {nodeCount === 1 ? (locale === "pt-BR" ? "nó" : "node") : (locale === "pt-BR" ? "nós" : "nodes")} · {edgeCount} {edgeCount === 1 ? (locale === "pt-BR" ? "conexão" : "connection") : (locale === "pt-BR" ? "conexões" : "connections")}
                 </p>
               </div>
             </div>
@@ -268,7 +273,7 @@ export function ImportFlowButton() {
                 onClick={() => setPreview(null)}
                 className="flex-1 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted transition-colors"
               >
-                Cancel
+                {locale === "pt-BR" ? "Cancelar" : "Cancel"}
               </button>
               <button
                 onClick={handleConfirmImport}
@@ -276,7 +281,7 @@ export function ImportFlowButton() {
                 className="flex-1 inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {importing && <Loader2 className="h-4 w-4 animate-spin" />}
-                {importing ? "Importing..." : "Import"}
+                {importing ? (locale === "pt-BR" ? "Importando..." : "Importing...") : (locale === "pt-BR" ? "Importar" : "Import")}
               </button>
             </div>
           </div>

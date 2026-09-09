@@ -3,9 +3,11 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Loader2 } from "lucide-react";
+import { useLocale } from "@/components/locale-provider";
 
 export function CreateFlowButton() {
   const router = useRouter();
+  const { locale } = useLocale();
   const [creating, setCreating] = useState(false);
   const pendingRef = useRef(false);
 
@@ -18,12 +20,12 @@ export function CreateFlowButton() {
       const res = await fetch("/api/v1/flows", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Untitled Flow" }),
+        body: JSON.stringify({ name: locale === "pt-BR" ? "Fluxo sem título" : "Untitled Flow" }),
       });
 
       if (!res.ok) {
         console.error("Failed to create flow");
-        alert("Failed to create flow. Please try again.");
+        alert(locale === "pt-BR" ? "Não foi possível criar o fluxo. Tente novamente." : "Failed to create flow. Please try again.");
         return;
       }
 
@@ -31,7 +33,7 @@ export function CreateFlowButton() {
       router.push(`/dashboard/flows/${flow.id}`);
     } catch (err) {
       console.error("Failed to create flow:", err);
-      alert("Failed to create flow. Please try again.");
+      alert(locale === "pt-BR" ? "Não foi possível criar o fluxo. Tente novamente." : "Failed to create flow. Please try again.");
     } finally {
       pendingRef.current = false;
       setCreating(false);
@@ -49,7 +51,7 @@ export function CreateFlowButton() {
       ) : (
         <Plus className="h-4 w-4" />
       )}
-      {creating ? "Creating..." : "New Flow"}
+      {creating ? (locale === "pt-BR" ? "Criando..." : "Creating...") : (locale === "pt-BR" ? "Novo fluxo" : "New Flow")}
     </button>
   );
 }
