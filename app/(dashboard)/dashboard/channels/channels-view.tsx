@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PlatformIcon } from "@/components/platform-icon";
+import { useLocale } from "@/components/locale-provider";
 import type { Database } from "@/lib/types/database";
 import {
   PLATFORMS,
@@ -57,6 +58,8 @@ export function ChannelsView({
   channels: Channel[];
   workspaceId: string;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [channels, setChannels] = useState(initialChannels);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -209,9 +212,9 @@ export function ChannelsView({
       <div className="border-b border-border px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Channels</h1>
+            <h1 className="text-2xl font-bold">{pt ? "Canais" : "Channels"}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Your connected social media accounts from Zernio
+              {pt ? "Suas contas de redes sociais conectadas pelo Zernio" : "Your connected social media accounts from Zernio"}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -228,7 +231,7 @@ export function ChannelsView({
               <RefreshCw
                 className={cn("h-4 w-4", syncing && "animate-spin")}
               />
-              {syncing ? "Syncing..." : "Sync"}
+              {syncing ? (pt ? "Sincronizando..." : "Syncing...") : (pt ? "Sincronizar" : "Sync")}
             </button>
             <div className="relative" ref={pickerRef}>
               <button
@@ -236,7 +239,7 @@ export function ChannelsView({
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
               >
                 <Plus className="h-4 w-4" />
-                Connect Channel
+                {pt ? "Conectar canal" : "Connect Channel"}
               </button>
               {showPlatformPicker && (
                 <div className="absolute right-0 top-full z-50 mt-2 w-56 rounded-xl border border-border bg-card p-2 shadow-lg">
@@ -268,18 +271,17 @@ export function ChannelsView({
           <div className="flex flex-col items-center justify-center py-20">
             <Plug className="h-10 w-10 text-muted-foreground/40" />
             <p className="mt-3 text-sm font-medium text-muted-foreground">
-              No channels yet
+              {pt ? "Ainda não há canais" : "No channels yet"}
             </p>
             <p className="mt-1 max-w-xs text-center text-xs text-muted-foreground/70">
-              Connect a social media account to start building flows and
-              automating conversations.
+              {pt ? "Conecte uma conta de rede social para começar a criar fluxos e automatizar conversas." : "Connect a social media account to start building flows and automating conversations."}
             </p>
             <button
               onClick={() => setShowPlatformPicker(true)}
               className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
             >
               <Plus className="h-4 w-4" />
-              Connect Channel
+              {pt ? "Conectar canal" : "Connect Channel"}
             </button>
           </div>
         ) : (
@@ -350,8 +352,8 @@ export function ChannelsView({
                         )}
                         title={
                           channel.is_active
-                            ? "Channel is active. Click to deactivate."
-                            : "Channel is inactive. Click to activate."
+                            ? (pt ? "O canal está ativo. Clique para desativar." : "Channel is active. Click to deactivate.")
+                            : (pt ? "O canal está inativo. Clique para ativar." : "Channel is inactive. Click to activate.")
                         }
                       >
                         {channel.is_active ? (
@@ -364,7 +366,7 @@ export function ChannelsView({
                         onClick={() => setChannelToDelete(channel)}
                         disabled={deletingId === channel.id}
                         className="rounded-lg p-2 text-muted-foreground hover:bg-red-100 hover:text-red-600 transition-colors"
-                        title="Delete channel"
+                        title={pt ? "Excluir canal" : "Delete channel"}
                       >
                         {deletingId === channel.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -392,11 +394,11 @@ export function ChannelsView({
                             : "bg-muted-foreground"
                         )}
                       />
-                      {channel.is_active ? "Active" : "Inactive"}
+                      {channel.is_active ? (pt ? "Ativo" : "Active") : (pt ? "Inativo" : "Inactive")}
                     </span>
                     <span className="text-[10px] text-muted-foreground">
-                      Connected{" "}
-                      {new Date(channel.created_at).toLocaleDateString([], {
+                      {pt ? "Conectado em" : "Connected"}{" "}
+                      {new Date(channel.created_at).toLocaleDateString(locale, {
                         month: "short",
                         day: "numeric",
                       })}
@@ -429,7 +431,7 @@ export function ChannelsView({
                               ? "border-green-200 bg-green-50 text-green-600"
                               : "border-border bg-card text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground"
                           )}
-                          title={copiedId === channel.id ? "Copied!" : "Copy DM link"}
+                          title={copiedId === channel.id ? (pt ? "Copiado!" : "Copied!") : (pt ? "Copiar link de mensagem" : "Copy DM link")}
                         >
                           {copiedId === channel.id ? (
                             <Check className="h-3 w-3" />
@@ -449,13 +451,12 @@ export function ChannelsView({
 
       <ConfirmDialog
         open={!!channelToDelete}
-        title="Delete channel?"
-        message={`This disconnects ${
-          channelToDelete?.display_name ??
-          channelToDelete?.username ??
-          (channelToDelete ? platformLabel(channelToDelete.platform) : "this channel")
-        } from Zernio and permanently deletes its conversations, contact links, and stats in Zernflow. This cannot be undone.`}
-        confirmLabel="Delete"
+        title={pt ? "Excluir canal?" : "Delete channel?"}
+        message={pt
+          ? `Esta ação desconecta ${channelToDelete?.display_name ?? channelToDelete?.username ?? (channelToDelete ? platformLabel(channelToDelete.platform) : "este canal")} do Zernio e exclui permanentemente suas conversas, vínculos de contatos e estatísticas no Zernflow. Esta ação não pode ser desfeita.`
+          : `This disconnects ${channelToDelete?.display_name ?? channelToDelete?.username ?? (channelToDelete ? platformLabel(channelToDelete.platform) : "this channel")} from Zernio and permanently deletes its conversations, contact links, and stats in Zernflow. This cannot be undone.`}
+        confirmLabel={pt ? "Excluir" : "Delete"}
+        cancelLabel={pt ? "Cancelar" : "Cancel"}
         destructive
         onConfirm={handleDelete}
         onCancel={() => setChannelToDelete(null)}

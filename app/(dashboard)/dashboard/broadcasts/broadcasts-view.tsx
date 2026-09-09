@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useLocale } from "@/components/locale-provider";
 import {
   SegmentBuilder,
   createEmptyFilter,
@@ -76,6 +77,11 @@ export function BroadcastsView({
   broadcasts: Broadcast[];
   workspaceId: string;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const statusLabels: Record<BroadcastStatus, string> = pt
+    ? { draft: "Rascunho", scheduled: "Agendada", sending: "Enviando", completed: "Concluída", cancelled: "Cancelada" }
+    : { draft: "Draft", scheduled: "Scheduled", sending: "Sending", completed: "Completed", cancelled: "Cancelled" };
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -145,9 +151,9 @@ export function BroadcastsView({
       <div className="border-b border-border px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Broadcasts</h1>
+            <h1 className="text-2xl font-bold">{pt ? "Transmissões" : "Broadcasts"}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Send messages to multiple contacts at once
+              {pt ? "Envie mensagens para vários contatos ao mesmo tempo" : "Send messages to multiple contacts at once"}
             </p>
           </div>
           <button
@@ -155,7 +161,7 @@ export function BroadcastsView({
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
             <Plus className="h-4 w-4" />
-            Create Broadcast
+            {pt ? "Criar transmissão" : "Create Broadcast"}
           </button>
         </div>
 
@@ -165,7 +171,7 @@ export function BroadcastsView({
             <div className="flex items-center gap-3">
               <input
                 type="text"
-                placeholder="Broadcast name..."
+                placeholder={pt ? "Nome da transmissão..." : "Broadcast name..."}
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 onKeyDown={(e) => {
@@ -180,7 +186,7 @@ export function BroadcastsView({
                 disabled={!newName.trim() || creating}
                 className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >
-                {creating ? "Creating..." : "Create"}
+                {creating ? (pt ? "Criando..." : "Creating...") : (pt ? "Criar" : "Create")}
               </button>
               <button
                 onClick={() => {
@@ -191,7 +197,7 @@ export function BroadcastsView({
                 }}
                 className="rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent"
               >
-                Cancel
+                {pt ? "Cancelar" : "Cancel"}
               </button>
             </div>
 
@@ -208,7 +214,7 @@ export function BroadcastsView({
                 )}
               >
                 <Filter className="h-3.5 w-3.5" />
-                Target specific contacts
+                {pt ? "Selecionar contatos específicos" : "Target specific contacts"}
                 <ChevronDown
                   className={cn(
                     "h-3 w-3 transition-transform",
@@ -237,10 +243,10 @@ export function BroadcastsView({
           <div className="flex flex-col items-center justify-center py-20">
             <Radio className="h-10 w-10 text-muted-foreground/40" />
             <p className="mt-3 text-sm font-medium text-muted-foreground">
-              No broadcasts yet
+              {pt ? "Ainda não há transmissões" : "No broadcasts yet"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Create your first broadcast to send messages to your contacts
+              {pt ? "Crie sua primeira transmissão para enviar mensagens aos seus contatos" : "Create your first broadcast to send messages to your contacts"}
             </p>
           </div>
         ) : (
@@ -274,7 +280,7 @@ export function BroadcastsView({
                             broadcast.status === "sending" && "animate-spin"
                           )}
                         />
-                        {status.label}
+                        {statusLabels[broadcast.status]}
                       </span>
                     </div>
                     <div className="mt-1 flex items-center gap-4 text-xs text-muted-foreground">
@@ -282,10 +288,10 @@ export function BroadcastsView({
                         <Calendar className="h-3 w-3" />
                         {broadcast.scheduled_for
                           ? formatDate(broadcast.scheduled_for)
-                          : "Not scheduled"}
+                          : (pt ? "Não agendada" : "Not scheduled")}
                       </span>
                       <span>
-                        Created {formatDate(broadcast.created_at)}
+                        {pt ? "Criada em" : "Created"} {formatDate(broadcast.created_at)}
                       </span>
                     </div>
                   </div>
@@ -295,7 +301,7 @@ export function BroadcastsView({
                     <div className="text-center">
                       <p className="text-lg font-semibold">{total}</p>
                       <p className="text-[10px] uppercase text-muted-foreground">
-                        Recipients
+                        {pt ? "Destinatários" : "Recipients"}
                       </p>
                     </div>
                     <div className="text-center">
@@ -303,7 +309,7 @@ export function BroadcastsView({
                         {broadcast.sent}
                       </p>
                       <p className="text-[10px] uppercase text-muted-foreground">
-                        Sent
+                        {pt ? "Enviadas" : "Sent"}
                       </p>
                     </div>
                     <div className="text-center">
@@ -311,7 +317,7 @@ export function BroadcastsView({
                         {broadcast.delivered}
                       </p>
                       <p className="text-[10px] uppercase text-muted-foreground">
-                        Delivered
+                        {pt ? "Entregues" : "Delivered"}
                       </p>
                     </div>
                     <div className="text-center">
@@ -319,7 +325,7 @@ export function BroadcastsView({
                         {broadcast.failed}
                       </p>
                       <p className="text-[10px] uppercase text-muted-foreground">
-                        Failed
+                        {pt ? "Falhas" : "Failed"}
                       </p>
                     </div>
                   </div>
@@ -344,6 +350,8 @@ function BroadcastDetail({
   onBack: () => void;
   onUpdate: (updated: Broadcast) => void;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const messageContent = broadcast.message_content as { text?: string } | null;
   const [messageText, setMessageText] = useState(messageContent?.text || "");
   const [sending, setSending] = useState(false);
@@ -353,6 +361,9 @@ function BroadcastDetail({
 
   const isDraft = broadcast.status === "draft" || broadcast.status === "scheduled";
   const status = statusConfig[broadcast.status];
+  const statusLabel = pt
+    ? { draft: "Rascunho", scheduled: "Agendada", sending: "Enviando", completed: "Concluída", cancelled: "Cancelada" }[broadcast.status]
+    : status.label;
   const StatusIcon = status.icon;
 
   async function handleSave() {
@@ -379,7 +390,7 @@ function BroadcastDetail({
 
   async function handleSend() {
     if (!messageText.trim()) {
-      setError("Message cannot be empty");
+      setError(pt ? "A mensagem não pode ficar vazia" : "Message cannot be empty");
       return;
     }
 
@@ -402,7 +413,7 @@ function BroadcastDetail({
         throw new Error(data.error || "Failed to send broadcast");
       }
 
-      setSuccess(`Sending to ${data.totalRecipients} recipients`);
+      setSuccess(pt ? `Enviando para ${data.totalRecipients} destinatários` : `Sending to ${data.totalRecipients} recipients`);
 
       // Update the broadcast locally
       onUpdate({
@@ -444,11 +455,11 @@ function BroadcastDetail({
                     broadcast.status === "sending" && "animate-spin"
                   )}
                 />
-                {status.label}
+                {statusLabel}
               </span>
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Created {formatDate(broadcast.created_at)}
+              {pt ? "Criada em" : "Created"} {formatDate(broadcast.created_at)}
             </p>
           </div>
         </div>
@@ -462,38 +473,39 @@ function BroadcastDetail({
             <div className="grid grid-cols-4 gap-4">
               <div className="rounded-lg border border-border bg-card p-4 text-center">
                 <p className="text-2xl font-bold">{broadcast.total_recipients}</p>
-                <p className="text-xs text-muted-foreground">Recipients</p>
+                <p className="text-xs text-muted-foreground">{pt ? "Destinatários" : "Recipients"}</p>
               </div>
               <div className="rounded-lg border border-border bg-card p-4 text-center">
                 <p className="text-2xl font-bold text-green-600">{broadcast.sent}</p>
-                <p className="text-xs text-muted-foreground">Sent</p>
+                <p className="text-xs text-muted-foreground">{pt ? "Enviadas" : "Sent"}</p>
               </div>
               <div className="rounded-lg border border-border bg-card p-4 text-center">
                 <p className="text-2xl font-bold text-blue-600">{broadcast.delivered}</p>
-                <p className="text-xs text-muted-foreground">Delivered</p>
+                <p className="text-xs text-muted-foreground">{pt ? "Entregues" : "Delivered"}</p>
               </div>
               <div className="rounded-lg border border-border bg-card p-4 text-center">
                 <p className="text-2xl font-bold text-red-600">{broadcast.failed}</p>
-                <p className="text-xs text-muted-foreground">Failed</p>
+                <p className="text-xs text-muted-foreground">{pt ? "Falhas" : "Failed"}</p>
               </div>
             </div>
           )}
 
           {/* Message composer */}
           <div className="space-y-3">
-            <label className="text-sm font-medium">Message</label>
+            <label className="text-sm font-medium">{pt ? "Mensagem" : "Message"}</label>
             <textarea
               value={messageText}
               onChange={(e) => setMessageText(e.target.value)}
               disabled={!isDraft}
-              placeholder="Type your broadcast message here..."
+              placeholder={pt ? "Digite aqui a mensagem da transmissão..." : "Type your broadcast message here..."}
               rows={6}
               className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
             />
             {isDraft && (
               <p className="text-xs text-muted-foreground">
-                This message will be sent to all contacts matching your segment
-                filter{broadcast.segment_filter ? "" : " (all subscribed contacts)"}.
+                {pt
+                  ? `Esta mensagem será enviada a todos os contatos que correspondem ao filtro do segmento${broadcast.segment_filter ? "" : " (todos os contatos inscritos)"}.`
+                  : `This message will be sent to all contacts matching your segment filter${broadcast.segment_filter ? "" : " (all subscribed contacts)"}.`}
               </p>
             )}
           </div>
@@ -503,7 +515,7 @@ function BroadcastDetail({
             <div className="rounded-lg border border-border bg-card p-4">
               <div className="flex items-center gap-2 text-sm font-medium">
                 <Filter className="h-4 w-4 text-muted-foreground" />
-                Segment filter applied
+                {pt ? "Filtro de segmento aplicado" : "Segment filter applied"}
               </div>
               <pre className="mt-2 overflow-auto rounded bg-muted p-3 text-xs text-muted-foreground">
                 {JSON.stringify(broadcast.segment_filter, null, 2)}
@@ -538,14 +550,14 @@ function BroadcastDetail({
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
-                {sending ? "Sending..." : "Send Now"}
+                {sending ? (pt ? "Enviando..." : "Sending...") : (pt ? "Enviar agora" : "Send Now")}
               </button>
               <button
                 onClick={handleSave}
                 disabled={saving || !messageText.trim()}
                 className="inline-flex items-center gap-2 rounded-lg border border-input bg-background px-4 py-2.5 text-sm font-medium text-foreground hover:bg-accent disabled:opacity-50"
               >
-                {saving ? "Saving..." : "Save Draft"}
+                {saving ? (pt ? "Salvando..." : "Saving...") : (pt ? "Salvar rascunho" : "Save Draft")}
               </button>
             </div>
           )}

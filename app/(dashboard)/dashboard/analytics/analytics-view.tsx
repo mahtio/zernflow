@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useLocale } from "@/components/locale-provider";
 
 // --- Types ---
 
@@ -200,6 +201,8 @@ export function AnalyticsView({
   workspaceId: string;
   initialData: AnalyticsData;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [timeRange, setTimeRange] = useState<TimeRange>("30d");
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -364,36 +367,36 @@ export function AnalyticsView({
   }
 
   const timeRangeOptions: { value: TimeRange; label: string }[] = [
-    { value: "7d", label: "Last 7 days" },
-    { value: "30d", label: "Last 30 days" },
-    { value: "90d", label: "Last 90 days" },
-    { value: "custom", label: "Custom" },
+    { value: "7d", label: pt ? "Últimos 7 dias" : "Last 7 days" },
+    { value: "30d", label: pt ? "Últimos 30 dias" : "Last 30 days" },
+    { value: "90d", label: pt ? "Últimos 90 dias" : "Last 90 days" },
+    { value: "custom", label: pt ? "Personalizado" : "Custom" },
   ];
 
   const statCards = [
     {
-      label: "Total Flows",
+      label: pt ? "Total de fluxos" : "Total Flows",
       value: stats.totalFlows,
       icon: GitBranch,
       color: "text-blue-600",
       bg: "bg-blue-100",
     },
     {
-      label: "Total Contacts",
+      label: pt ? "Total de contatos" : "Total Contacts",
       value: stats.totalContacts,
       icon: Users,
       color: "text-purple-600",
       bg: "bg-purple-100",
     },
     {
-      label: "Messages Sent",
+      label: pt ? "Mensagens enviadas" : "Messages Sent",
       value: stats.messagesSent,
       icon: Send,
       color: "text-green-600",
       bg: "bg-green-100",
     },
     {
-      label: "Messages Failed",
+      label: pt ? "Falhas no envio" : "Messages Failed",
       value: stats.messagesFailed,
       icon: AlertTriangle,
       color: "text-red-600",
@@ -413,9 +416,9 @@ export function AnalyticsView({
       <div className="border-b border-border px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Analytics</h1>
+            <h1 className="text-2xl font-bold">{pt ? "Análises" : "Analytics"}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Monitor your workspace performance
+              {pt ? "Acompanhe o desempenho do seu espaço de trabalho" : "Monitor your workspace performance"}
             </p>
           </div>
 
@@ -450,7 +453,7 @@ export function AnalyticsView({
                 className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
-            <span className="text-sm text-muted-foreground">to</span>
+            <span className="text-sm text-muted-foreground">{pt ? "até" : "to"}</span>
             <input
               type="date"
               value={customEnd}
@@ -462,7 +465,7 @@ export function AnalyticsView({
               disabled={!customStart || !customEnd}
               className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
-              Apply
+              {pt ? "Aplicar" : "Apply"}
             </button>
           </div>
         )}
@@ -508,9 +511,9 @@ export function AnalyticsView({
               {/* Contact growth */}
               <div className="rounded-xl border border-border bg-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold">Contact Growth</h3>
+                  <h3 className="text-sm font-semibold">{pt ? "Crescimento de contatos" : "Contact Growth"}</h3>
                   <span className="text-xs text-muted-foreground">
-                    New contacts per day
+                    {pt ? "Novos contatos por dia" : "New contacts per day"}
                   </span>
                 </div>
                 {contactGrowth.length > 0 ? (
@@ -532,7 +535,7 @@ export function AnalyticsView({
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground py-8 text-center">
-                    No data for this period
+                    {pt ? "Não há dados neste período" : "No data for this period"}
                   </p>
                 )}
               </div>
@@ -540,15 +543,15 @@ export function AnalyticsView({
               {/* Message volume */}
               <div className="rounded-xl border border-border bg-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold">Message Volume</h3>
+                  <h3 className="text-sm font-semibold">{pt ? "Volume de mensagens" : "Message Volume"}</h3>
                   <div className="flex items-center gap-3">
                     <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-                      Sent
+                      {pt ? "Enviadas" : "Sent"}
                     </span>
                     <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
                       <span className="inline-block h-2 w-2 rounded-full bg-red-500" />
-                      Failed
+                      {pt ? "Falhas" : "Failed"}
                     </span>
                   </div>
                 </div>
@@ -556,7 +559,7 @@ export function AnalyticsView({
                   <MessageVolumeChart data={messageVolume} maxVal={maxMessageVolume} />
                 ) : (
                   <p className="text-sm text-muted-foreground py-8 text-center">
-                    No data for this period
+                    {pt ? "Não há dados neste período" : "No data for this period"}
                   </p>
                 )}
               </div>
@@ -565,13 +568,13 @@ export function AnalyticsView({
             {/* Flow performance table */}
             <div className="rounded-xl border border-border bg-card">
               <div className="border-b border-border px-6 py-4">
-                <h3 className="text-sm font-semibold">Flow Performance</h3>
+                <h3 className="text-sm font-semibold">{pt ? "Desempenho dos fluxos" : "Flow Performance"}</h3>
               </div>
               {flowPerformance.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12">
                   <GitBranch className="h-8 w-8 text-muted-foreground/40" />
                   <p className="mt-2 text-sm text-muted-foreground">
-                    No flow activity in this period
+                    {pt ? "Não há atividade de fluxos neste período" : "No flow activity in this period"}
                   </p>
                 </div>
               ) : (
@@ -579,16 +582,16 @@ export function AnalyticsView({
                   <thead>
                     <tr className="border-b border-border bg-muted/50 text-left">
                       <th className="px-6 py-3 text-xs font-medium uppercase text-muted-foreground">
-                        Flow Name
+                        {pt ? "Nome do fluxo" : "Flow Name"}
                       </th>
                       <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground text-right">
-                        Starts
+                        {pt ? "Inícios" : "Starts"}
                       </th>
                       <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground text-right">
-                        Completions
+                        {pt ? "Conclusões" : "Completions"}
                       </th>
                       <th className="px-6 py-3 text-xs font-medium uppercase text-muted-foreground text-right">
-                        Drop-off Rate
+                        {pt ? "Taxa de abandono" : "Drop-off Rate"}
                       </th>
                     </tr>
                   </thead>

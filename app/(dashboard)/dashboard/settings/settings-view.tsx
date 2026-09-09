@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useLocale } from "@/components/locale-provider";
 
 interface WorkspaceSettings {
   id: string;
@@ -40,6 +41,8 @@ export function SettingsView({
 }: {
   workspace: WorkspaceSettings;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [name, setName] = useState(workspace.name);
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
@@ -161,9 +164,9 @@ export function SettingsView({
     <div className="flex h-full flex-col">
       {/* Header */}
       <div className="border-b border-border px-8 py-6">
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-2xl font-bold">{pt ? "Configurações" : "Settings"}</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage your workspace settings
+          {pt ? "Gerencie as configurações do seu espaço de trabalho" : "Manage your workspace settings"}
         </p>
       </div>
 
@@ -174,11 +177,11 @@ export function SettingsView({
           <section>
             <div className="flex items-center gap-2">
               <Settings className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">General</h2>
+              <h2 className="text-sm font-semibold">{pt ? "Geral" : "General"}</h2>
             </div>
             <div className="mt-4">
               <label className="text-xs font-medium text-muted-foreground">
-                Workspace Name
+                {pt ? "Nome do espaço de trabalho" : "Workspace Name"}
               </label>
               <input
                 type="text"
@@ -198,8 +201,8 @@ export function SettingsView({
               <h2 className="text-sm font-semibold">Zernio API Key</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Your Zernio API key is used to connect with social media platforms.
-              {workspace.hasApiKey && " A key is currently configured."}
+              {pt ? "Sua chave da API Zernio é usada para conectar plataformas de redes sociais." : "Your Zernio API key is used to connect with social media platforms."}
+              {workspace.hasApiKey && (pt ? " Uma chave está configurada no momento." : " A key is currently configured.")}
             </p>
             <p className="mt-1.5 text-xs text-muted-foreground">
               You can get your API key from your{" "}
@@ -235,8 +238,8 @@ export function SettingsView({
                 }}
                 placeholder={
                   workspace.hasApiKey
-                    ? "Enter a new key to replace the current one"
-                    : "Enter your Zernio API key"
+                    ? (pt ? "Insira uma nova chave para substituir a atual" : "Enter a new key to replace the current one")
+                    : (pt ? "Insira sua chave da API Zernio" : "Enter your Zernio API key")
                 }
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm font-mono placeholder:text-muted-foreground placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-ring"
               />
@@ -265,15 +268,14 @@ export function SettingsView({
                 ) : (
                   <Plug className="h-3.5 w-3.5" />
                 )}
-                {testing ? "Testing..." : "Test Connection"}
+                {testing ? (pt ? "Testando..." : "Testing...") : (pt ? "Testar conexão" : "Test Connection")}
               </button>
 
               {testResult && testResult.success && (
                 <span className="flex items-center gap-1 text-xs text-green-600">
                   <Check className="h-3.5 w-3.5" />
-                  Connected ({testResult.accountCount}{" "}
-                  {testResult.accountCount === 1 ? "account" : "accounts"}{" "}
-                  found)
+                  {pt ? "Conectado" : "Connected"} ({testResult.accountCount}{" "}
+                  {testResult.accountCount === 1 ? (pt ? "conta" : "account") : (pt ? "contas" : "accounts")} {pt ? "encontrada(s)" : "found"})
                 </span>
               )}
 
@@ -287,7 +289,7 @@ export function SettingsView({
             {workspace.hasApiKey && !testResult && (
               <p className="mt-1.5 flex items-center gap-1 text-xs text-green-600">
                 <Check className="h-3 w-3" />
-                API key configured
+                {pt ? "Chave da API configurada" : "API key configured"}
               </p>
             )}
           </section>
@@ -322,8 +324,8 @@ export function SettingsView({
                 onChange={(e) => setAiKey(e.target.value)}
                 placeholder={
                   workspace.hasAiKey
-                    ? "Enter a new key to replace the current one"
-                    : "Enter your AI Gateway API key"
+                    ? (pt ? "Insira uma nova chave para substituir a atual" : "Enter a new key to replace the current one")
+                    : (pt ? "Insira sua chave da API AI Gateway" : "Enter your AI Gateway API key")
                 }
                 className="w-full rounded-lg border border-input bg-background px-3 py-2 pr-10 text-sm font-mono placeholder:text-muted-foreground placeholder:font-sans focus:outline-none focus:ring-2 focus:ring-ring"
               />

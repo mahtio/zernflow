@@ -6,6 +6,7 @@ import Image from "next/image";
 import { Users, Crown, Shield, User, Loader2 } from "lucide-react";
 import { acceptInvite } from "@/lib/actions/team";
 import Link from "next/link";
+import { useLocale } from "@/components/locale-provider";
 
 const roleIcons: Record<string, React.ReactNode> = {
   owner: <Crown className="h-3.5 w-3.5" />,
@@ -31,6 +32,8 @@ export function AcceptInviteView({
   currentUserEmail: string | null;
 }) {
   const router = useRouter();
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [accepting, setAccepting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,9 +69,9 @@ export function AcceptInviteView({
             height={48}
             className="mx-auto mb-3"
           />
-          <h1 className="text-2xl font-bold">You&apos;re invited!</h1>
+          <h1 className="text-2xl font-bold">{pt ? "Você foi convidado!" : "You're invited!"}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            {inviterName} invited you to join
+            {pt ? `${inviterName} convidou você para participar` : `${inviterName} invited you to join`}
           </p>
         </div>
 
@@ -84,7 +87,7 @@ export function AcceptInviteView({
             </span>
           </div>
           <p className="mt-2 text-xs text-muted-foreground">
-            Invited as {email}
+            {pt ? `Convidado como ${email}` : `Invited as ${email}`}
           </p>
         </div>
 
@@ -98,10 +101,10 @@ export function AcceptInviteView({
               {accepting ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Accepting...
+                  {pt ? "Aceitando..." : "Accepting..."}
                 </>
               ) : (
-                "Accept Invite"
+                pt ? "Aceitar convite" : "Accept Invite"
               )}
             </button>
 
@@ -114,19 +117,16 @@ export function AcceptInviteView({
         {isLoggedIn && emailMismatch && (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-center">
             <p className="text-sm text-amber-800">
-              You are logged in as{" "}
-              <span className="font-medium">{currentUserEmail}</span>, but this
-              invite was sent to{" "}
-              <span className="font-medium">{email}</span>.
+              {pt ? `Você está conectado como ${currentUserEmail}, mas este convite foi enviado para ${email}.` : <>You are logged in as <span className="font-medium">{currentUserEmail}</span>, but this invite was sent to <span className="font-medium">{email}</span>.</>}
             </p>
             <p className="mt-1 text-xs text-amber-600">
-              Please log in with the invited email address to accept.
+              {pt ? "Entre com o endereço de e-mail convidado para aceitar." : "Please log in with the invited email address to accept."}
             </p>
             <Link
               href={`/login`}
               className="mt-3 inline-flex rounded-lg border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
             >
-              Switch Account
+              {pt ? "Trocar conta" : "Switch Account"}
             </Link>
           </div>
         )}
@@ -137,15 +137,15 @@ export function AcceptInviteView({
               href={`/login?next=/invite/${inviteId}`}
               className="flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
-              Sign in to Accept
+              {pt ? "Entrar para aceitar" : "Sign in to Accept"}
             </Link>
             <p className="text-center text-sm text-muted-foreground">
-              Don&apos;t have an account?{" "}
+              {pt ? "Ainda não tem uma conta?" : "Don't have an account?"}{" "}
               <Link
                 href={`/register?next=/invite/${inviteId}`}
                 className="font-medium text-foreground hover:underline"
               >
-                Sign up
+                {pt ? "Criar conta" : "Sign up"}
               </Link>
             </p>
           </div>
