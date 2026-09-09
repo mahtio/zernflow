@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback } from "react";
-import { Plus, X } from "lucide-react";
+import { useCallback, useState, type FormEvent } from "react";
+import { Loader2, Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import type { NodeType } from "@/lib/types/database";
 import { EnrollSequencePanel } from "./EnrollSequencePanel";
 
@@ -36,7 +37,9 @@ interface CustomFieldOption {
 
 interface ActionPanelProps {
   data: Record<string, unknown>;
+  workspaceId: string;
   customFields: CustomFieldOption[];
+  onCustomFieldCreated: (field: CustomFieldOption) => void;
   onChange: (data: Record<string, unknown>) => void;
 }
 
@@ -47,7 +50,9 @@ interface ActionSubPanelProps {
 
 export function ActionPanel({
   data: rawData,
+  workspaceId,
   customFields,
+  onCustomFieldCreated,
   onChange,
 }: ActionPanelProps) {
   const data = rawData as ActionPanelData;
@@ -61,7 +66,9 @@ export function ActionPanel({
       return (
         <SetFieldConfig
           data={data}
+          workspaceId={workspaceId}
           customFields={customFields}
+          onCustomFieldCreated={onCustomFieldCreated}
           onChange={onChange}
         />
       );
@@ -117,58 +124,246 @@ function TagConfig({ data, onChange }: ActionSubPanelProps) {
 }
 
 /* ───────── Set Custom Field Config ───────── */
+type CustomFieldType = "text" | "number" | "boolean" | "date" | "url" | "email";
+
+const customFieldTypes: Array<{ value: CustomFieldType; label: string }> = [
+  { value: "text", label: "Text" },
+  { value: "number", label: "Number" },
+  { value: "boolean", label: "Yes / No" },
+  { value: "date", label: "Date" },
+  { value: "url", label: "URL" },
+  { value: "email", label: "Email" },
+];
+
+function createFieldSlug(name: string) {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
 function SetFieldConfig({
   data,
+  workspaceId,
   customFields,
+  onCustomFieldCreated,
   onChange,
-}: ActionSubPanelProps & { customFields: CustomFieldOption[] }) {
+}: ActionSubPanelProps & {
+  workspaceId: string;
+  customFields: CustomFieldOption[];
+  onCustomFieldCreated: (field: CustomFieldOption) => void;
+}) {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [fieldName, setFieldName] = useState("");
+  const [fieldType, setFieldType] = useState<CustomFieldType>("text");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const selectedFieldExists = customFields.some(
     (field) => field.slug === data.fieldSlug
   );
+  const fieldSlug = createFieldSlug(fieldName);
+
+  function closeCreateModal() {
+    if (creating) return;
+    setShowCreateModal(false);
+    setFieldName("");
+    setFieldType("text");
+    setCreateError(null);
+  }
+
+  async function handleCreateField(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!fieldName.trim() || !fieldSlug) return;
+
+    setCreating(true);
+    setCreateError(null);
+
+    const supabase = createClient();
+    const { data: createdField, error } = await supabase
+      .from("custom_field_definitions")
+      .insert({
+        workspace_id: workspaceId,
+        name: fieldName.trim(),
+        slug: fieldSlug,
+        type: fieldType,
+      })
+      .select("id, name, slug")
+      .single();
+
+    if (error || !createdField) {
+      setCreateError(
+        error?.code === "23505"
+          ? "A custom field with this name already exists."
+          : error?.message || "Could not create the custom field."
+      );
+      setCreating(false);
+      return;
+    }
+
+    onCustomFieldCreated(createdField);
+    onChange({ ...data, fieldSlug: createdField.slug });
+    setCreating(false);
+    setShowCreateModal(false);
+    setFieldName("");
+    setFieldType("text");
+    setCreateError(null);
+  }
 
   return (
-    <div className="space-y-4">
-      <div>
-        <label className="mb-2 block text-xs font-semibold text-foreground">
-          Custom Field
-        </label>
-        <select
-          value={data.fieldSlug || ""}
-          onChange={(e) => onChange({ ...data, fieldSlug: e.target.value })}
-          disabled={customFields.length === 0}
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          <option value="">
-            {customFields.length === 0
-              ? "No custom fields available"
-              : "Select a custom field"}
-          </option>
-          {data.fieldSlug && !selectedFieldExists && (
-            <option value={data.fieldSlug}>{data.fieldSlug} (not found)</option>
-          )}
-          {customFields.map((field) => (
-            <option key={field.id} value={field.slug}>
-              {field.name} ({field.slug})
-            </option>
-          ))}
-        </select>
+    <>
+      <div className="space-y-4">
+        <div>
+          <label className="mb-2 block text-xs font-semibold text-foreground">
+            Custom Field
+          </label>
+          <select
+            value={data.fieldSlug || ""}
+            onChange={(e) => {
+              if (e.target.value === "__add_field__") {
+                setShowCreateModal(true);
+                return;
+              }
+              onChange({ ...data, fieldSlug: e.target.value });
+            }}
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          >
+            <option value="">Select a custom field</option>
+            {data.fieldSlug && !selectedFieldExists && (
+              <option value={data.fieldSlug}>{data.fieldSlug} (not found)</option>
+            )}
+            {customFields.map((field) => (
+              <option key={field.id} value={field.slug}>
+                {field.name} ({field.slug})
+              </option>
+            ))}
+            <option value="__add_field__">+ Add custom field</option>
+          </select>
+        </div>
+        <div>
+          <label className="mb-2 block text-xs font-semibold text-foreground">
+            Value
+          </label>
+          <input
+            type="text"
+            value={data.value || ""}
+            onChange={(e) => onChange({ ...data, value: e.target.value })}
+            placeholder="Value or {{variable}}"
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          <p className="mt-1.5 text-[11px] text-muted-foreground/60">
+            Use {"{{variable}}"} for dynamic values
+          </p>
+        </div>
       </div>
-      <div>
-        <label className="mb-2 block text-xs font-semibold text-foreground">
-          Value
-        </label>
-        <input
-          type="text"
-          value={data.value || ""}
-          onChange={(e) => onChange({ ...data, value: e.target.value })}
-          placeholder="Value or {{variable}}"
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
-        />
-        <p className="mt-1.5 text-[11px] text-muted-foreground/60">
-          Use {"{{variable}}"} for dynamic values
-        </p>
-      </div>
-    </div>
+
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <button
+            type="button"
+            aria-label="Close modal"
+            className="absolute inset-0 bg-black/60"
+            onClick={closeCreateModal}
+          />
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-custom-field-title"
+            onSubmit={handleCreateField}
+            className="relative z-10 w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-xl"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3
+                  id="create-custom-field-title"
+                  className="text-base font-semibold text-foreground"
+                >
+                  Add custom field
+                </h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Create a field and select the kind of value it stores.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                disabled={creating}
+                className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <div>
+                <label className="mb-2 block text-xs font-semibold text-foreground">
+                  Field name
+                </label>
+                <input
+                  autoFocus
+                  type="text"
+                  value={fieldName}
+                  onChange={(e) => setFieldName(e.target.value)}
+                  placeholder="e.g. Birth city"
+                  disabled={creating}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
+                />
+                {fieldSlug && (
+                  <p className="mt-1.5 text-[11px] text-muted-foreground">
+                    Slug: {fieldSlug}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-xs font-semibold text-foreground">
+                  Field type
+                </label>
+                <select
+                  value={fieldType}
+                  onChange={(e) => setFieldType(e.target.value as CustomFieldType)}
+                  disabled={creating}
+                  className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-60"
+                >
+                  {customFieldTypes.map((type) => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {createError && (
+                <p className="rounded-lg bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {createError}
+                </p>
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                disabled={creating}
+                className="rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground hover:bg-muted disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={creating || !fieldName.trim() || !fieldSlug}
+                className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creating && <Loader2 className="h-4 w-4 animate-spin" />}
+                Add field
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
   );
 }
 

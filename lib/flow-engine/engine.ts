@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, Json } from "@/lib/types/database";
+import type { Database, Json, NodeType } from "@/lib/types/database";
 import type {
   FlowNode,
   FlowEdge,
@@ -287,7 +287,8 @@ async function traverseNodes(
 
   // Persist variables written by output-producing nodes so they survive
   // pauses (resumeSession reloads them from the session row).
-  if (node.type === "aiResponse" || node.type === "httpRequest") {
+  const executedNodeType = getExecutableNodeType(node);
+  if (executedNodeType === "aiResponse" || executedNodeType === "httpRequest") {
     await supabase
       .from("flow_sessions")
       .update({ variables: (context.variables ?? {}) as Json })
@@ -325,13 +326,20 @@ async function traverseNodes(
   await traverseNodes(supabase, sessionId, nextNode, nodes, edges, context, depth + 1);
 }
 
+function getExecutableNodeType(node: FlowNode): NodeType | undefined {
+  if (node.type !== "action") return node.type;
+  return (node.data as { actionType?: NodeType }).actionType;
+}
+
 async function executeNode(
   supabase: SupabaseClient<Database>,
   node: FlowNode,
   context: FlowExecutionContext,
   sessionId: string
 ): Promise<string | void> {
-  switch (node.type) {
+  const nodeType = getExecutableNodeType(node);
+
+  switch (nodeType) {
     case "sendMessage":
       return executeSendMessage(supabase, node.data as SendMessageNodeData, context);
     case "condition":
@@ -340,7 +348,7 @@ async function executeNode(
       return executeDelay(supabase, node.data as DelayNodeData, sessionId, node.id, context);
     case "addTag":
     case "removeTag":
-      return executeTag(supabase, node.data as TagNodeData, context);
+      return executeTag(supabase, node.data as TagNodeData, nodeType, context);
     case "setCustomField":
       return executeSetField(supabase, node.data as SetFieldNodeData, context);
     case "httpRequest":
@@ -351,7 +359,7 @@ async function executeNode(
       return executeHumanTakeover(supabase, context, sessionId);
     case "subscribe":
     case "unsubscribe":
-      return executeSubscription(supabase, node.type, context);
+      return executeSubscription(supabase, nodeType, context);
     case "commentReply":
       return executeCommentReply(supabase, node.data as CommentReplyNodeData, context);
     case "privateReply":
@@ -702,6 +710,7 @@ async function executeDelay(
 async function executeTag(
   supabase: SupabaseClient<Database>,
   data: TagNodeData,
+  nodeType: "addTag" | "removeTag",
   context: FlowExecutionContext
 ) {
   // Find or create tag
@@ -716,7 +725,8 @@ async function executeTag(
 
   if (!tag) return;
 
-  if (data.action === "add") {
+  const action = data.action ?? (nodeType === "addTag" ? "add" : "remove");
+  if (action === "add") {
     await supabase
       .from("contact_tags")
       .upsert({ contact_id: context.contactId, tag_id: tag.id })
@@ -740,7 +750,7 @@ async function executeSetField(
     return;
   }
 
-  const { data: fieldDef, error: fieldDefError } = await supabase
+  const { data: createdFieldDef, error: createFieldError } = await supabase
     .from("custom_field_definitions")
     .upsert(
       {
@@ -749,18 +759,39 @@ async function executeSetField(
         name: data.fieldSlug,
         type: "text",
       },
-      { onConflict: "workspace_id,slug" }
+      { onConflict: "workspace_id,slug", ignoreDuplicates: true }
     )
     .select("id")
-    .single();
+    .maybeSingle();
 
-  if (fieldDefError || !fieldDef) {
+  if (createFieldError) {
     console.error("[executeSetField] Failed to ensure field definition", {
-      error: fieldDefError,
+      error: createFieldError,
       fieldSlug: data.fieldSlug,
       workspaceId: context.workspaceId,
     });
     return;
+  }
+
+  let fieldDef = createdFieldDef;
+  if (!fieldDef) {
+    const { data: existingFieldDef, error: findFieldError } = await supabase
+      .from("custom_field_definitions")
+      .select("id")
+      .eq("workspace_id", context.workspaceId)
+      .eq("slug", data.fieldSlug)
+      .single();
+
+    if (findFieldError || !existingFieldDef) {
+      console.error("[executeSetField] Failed to find field definition", {
+        error: findFieldError,
+        fieldSlug: data.fieldSlug,
+        workspaceId: context.workspaceId,
+      });
+      return;
+    }
+
+    fieldDef = existingFieldDef;
   }
 
   const value = interpolateVariables(data.value, context.variables || {});

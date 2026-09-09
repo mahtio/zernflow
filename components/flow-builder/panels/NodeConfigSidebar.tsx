@@ -22,7 +22,9 @@ interface NodeConfigSidebarProps {
   node: Node;
   nodes: Node[];
   edges: Edge[];
+  workspaceId: string;
   customFields: CustomFieldOption[];
+  onCustomFieldCreated: (field: CustomFieldOption) => void;
   onChange: (nodeId: string, data: Record<string, unknown>) => void;
   onClose: () => void;
   onDelete: (nodeId: string) => void;
@@ -123,7 +125,9 @@ export function NodeConfigSidebar({
   node,
   nodes,
   edges,
+  workspaceId,
   customFields,
+  onCustomFieldCreated,
   onChange,
   onClose,
   onDelete,
@@ -180,7 +184,9 @@ export function NodeConfigSidebar({
         return (
           <ActionPanel
             data={data}
+            workspaceId={workspaceId}
             customFields={customFields}
+            onCustomFieldCreated={onCustomFieldCreated}
             onChange={handleChange}
           />
         );

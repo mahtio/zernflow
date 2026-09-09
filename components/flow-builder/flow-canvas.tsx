@@ -105,10 +105,22 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [availableCustomFields, setAvailableCustomFields] = useState(customFields);
 
   const selectedNode = selectedNodeId
     ? nodes.find((n) => n.id === selectedNodeId) || null
     : null;
+
+  const handleCustomFieldCreated = useCallback(
+    (field: CustomFieldDefinition) => {
+      setAvailableCustomFields((fields) =>
+        [...fields.filter((item) => item.id !== field.id), field].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
+    },
+    []
+  );
 
   const onConnect = useCallback(
     (connection: Connection) => {
@@ -478,7 +490,9 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             node={selectedNode}
             nodes={nodes}
             edges={edges}
-            customFields={customFields}
+            workspaceId={flow.workspace_id}
+            customFields={availableCustomFields}
+            onCustomFieldCreated={handleCustomFieldCreated}
             onChange={onNodeDataChange}
             onClose={closeSidebar}
             onDelete={deleteNode}
