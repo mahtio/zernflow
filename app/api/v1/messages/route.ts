@@ -3,6 +3,42 @@ import { createClient } from "@/lib/supabase/server";
 import { createZernioClient } from "@/lib/zernio-client";
 import { messagePreview } from "@/lib/message-preview";
 
+interface ZernioAttachment {
+  id?: string;
+  type?: string;
+  url?: string;
+  filename?: string | null;
+  previewUrl?: string | null;
+}
+
+function attachmentUrl(url: string | undefined, conversationId: string): string | null {
+  if (!url) return null;
+
+  try {
+    const parsed = new URL(url);
+    const mediaMatch = parsed.pathname.match(/\/v1\/whatsapp\/media\/([^/]+)$/);
+    if (parsed.hostname === "zernio.com" && mediaMatch) {
+      return `/api/v1/messages/media?conversationId=${encodeURIComponent(conversationId)}&mediaId=${encodeURIComponent(mediaMatch[1])}`;
+    }
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function mapAttachment(attachment: ZernioAttachment, conversationId: string) {
+  const url = attachmentUrl(attachment.url, conversationId);
+  if (!url) return null;
+
+  return {
+    id: attachment.id ?? null,
+    type: attachment.type ?? "file",
+    url,
+    filename: attachment.filename ?? null,
+    previewUrl: attachmentUrl(attachment.previewUrl ?? undefined, conversationId),
+  };
+}
+
 /**
  * GET /api/v1/messages?conversationId=...
  *
@@ -66,7 +102,11 @@ export async function GET(request: NextRequest) {
       conversation_id: conversationId,
       direction: m.direction === "outbound" ? "outbound" : "inbound",
       text: m.text ?? m.message ?? null,
-      attachments: m.attachments?.length ? m.attachments : null,
+      attachments: m.attachments?.length
+        ? m.attachments
+            .map((attachment: ZernioAttachment) => mapAttachment(attachment, conversationId))
+            .filter(Boolean)
+        : null,
       quick_reply_payload: null,
       postback_payload: null,
       callback_data: null,

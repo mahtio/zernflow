@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Paperclip, Bot, User, MessageSquare, CheckCircle, Clock, RotateCcw, Loader2 } from "lucide-react";
+import { Send, Paperclip, Bot, User, MessageSquare, CheckCircle, Clock, RotateCcw, Loader2, FileText, ExternalLink } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
@@ -63,6 +63,124 @@ function MessageText({ text, pt }: { text: string; pt: boolean }) {
   );
 }
 
+interface Attachment {
+  id?: string | null;
+  type: string;
+  url: string;
+  filename?: string | null;
+  previewUrl?: string | null;
+}
+
+function getAttachments(value: Message["attachments"]): Attachment[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const attachment = item as Record<string, unknown>;
+    if (typeof attachment.type !== "string" || typeof attachment.url !== "string") return [];
+
+    return [{
+      id: typeof attachment.id === "string" ? attachment.id : null,
+      type: attachment.type,
+      url: attachment.url,
+      filename: typeof attachment.filename === "string" ? attachment.filename : null,
+      previewUrl: typeof attachment.previewUrl === "string" ? attachment.previewUrl : null,
+    }];
+  });
+}
+
+function AttachmentList({ attachments, pt }: { attachments: Attachment[]; pt: boolean }) {
+  const [pendingAttachment, setPendingAttachment] = useState<Attachment | null>(null);
+
+  function openAttachment() {
+    if (!pendingAttachment) return;
+    window.open(pendingAttachment.url, "_blank", "noopener,noreferrer");
+    setPendingAttachment(null);
+  }
+
+  return (
+    <>
+      <div className="mt-2 space-y-2 first:mt-0">
+        {attachments.map((attachment, index) => {
+          const key = attachment.id ?? `${attachment.url}-${index}`;
+          const label = attachment.filename || (pt ? "Abrir anexo" : "Open attachment");
+
+          if (attachment.type === "image" || attachment.type === "sticker") {
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPendingAttachment(attachment)}
+                className="block max-w-full overflow-hidden rounded-lg focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label={pt ? "Abrir imagem em uma nova aba" : "Open image in a new tab"}
+              >
+                <img
+                  src={attachment.previewUrl || attachment.url}
+                  alt={attachment.filename || (pt ? "Imagem anexada" : "Attached image")}
+                  loading="lazy"
+                  className={cn(
+                    "max-h-80 max-w-full object-contain",
+                    attachment.type === "sticker" ? "w-40" : "min-w-40"
+                  )}
+                />
+              </button>
+            );
+          }
+
+          if (attachment.type === "video") {
+            return (
+              <video
+                key={key}
+                src={attachment.url}
+                poster={attachment.previewUrl ?? undefined}
+                controls
+                preload="metadata"
+                className="max-h-80 max-w-full rounded-lg"
+              >
+                {pt ? "Seu navegador não suporta vídeo." : "Your browser does not support video."}
+              </video>
+            );
+          }
+
+          if (attachment.type === "audio") {
+            return (
+              <audio key={key} src={attachment.url} controls preload="metadata" className="max-w-full">
+                {pt ? "Seu navegador não suporta áudio." : "Your browser does not support audio."}
+              </audio>
+            );
+          }
+
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setPendingAttachment(attachment)}
+              className="flex w-full items-center gap-2 rounded-lg border border-current/20 p-2 text-left hover:bg-black/5"
+            >
+              <FileText className="h-5 w-5 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-xs font-medium">{label}</span>
+              <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+            </button>
+          );
+        })}
+      </div>
+      <ConfirmDialog
+        open={pendingAttachment !== null}
+        title={pt ? "Abrir anexo externo?" : "Open external attachment?"}
+        message={
+          pt
+            ? `Este anexo será aberto em uma nova aba${pendingAttachment?.filename ? `: ${pendingAttachment.filename}` : ""}. Deseja continuar?`
+            : `This attachment will open in a new tab${pendingAttachment?.filename ? `: ${pendingAttachment.filename}` : ""}. Do you want to continue?`
+        }
+        confirmLabel={pt ? "Abrir anexo" : "Open attachment"}
+        cancelLabel={pt ? "Cancelar" : "Cancel"}
+        onConfirm={openAttachment}
+        onCancel={() => setPendingAttachment(null)}
+      />
+    </>
+  );
+}
+
 function formatMessageTime(dateStr: string, locale: string): string {
   const date = new Date(dateStr);
   return date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
@@ -96,6 +214,7 @@ function shouldShowDateSeparator(
 function MessageBubble({ message, locale, pt }: { message: Message; locale: string; pt: boolean }) {
   const isInbound = message.direction === "inbound";
   const isBot = message.sent_by_flow_id !== null;
+  const attachments = getAttachments(message.attachments);
 
   return (
     <div
@@ -120,10 +239,11 @@ function MessageBubble({ message, locale, pt }: { message: Message; locale: stri
           )}
         >
           {message.text && <MessageText text={message.text} pt={pt} />}
-          {message.attachments && (
+          {attachments.length > 0 && <AttachmentList attachments={attachments} pt={pt} />}
+          {message.attachments && attachments.length === 0 && (
             <div className="mt-1">
               <Paperclip className="inline h-3 w-3" />
-              <span className="ml-1 text-xs opacity-70">{pt ? "Anexo" : "Attachment"}</span>
+              <span className="ml-1 text-xs opacity-70">{pt ? "Anexo indisponível" : "Attachment unavailable"}</span>
             </div>
           )}
         </div>
