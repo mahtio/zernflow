@@ -26,13 +26,14 @@ const unitOptions: Array<{ value: DelayUnit; label: string }> = [
   { value: "days", label: "Days" },
 ];
 
-const presets: Array<{ label: string; duration: number; unit: DelayUnit }> = [
-  { label: "30 sec", duration: 30, unit: "seconds" },
-  { label: "5 min", duration: 5, unit: "minutes" },
-  { label: "1 hour", duration: 1, unit: "hours" },
-  { label: "1 day", duration: 1, unit: "days" },
-  { label: "3 days", duration: 3, unit: "days" },
-  { label: "7 days", duration: 7, unit: "days" },
+const presets: Array<{ label: string; ptLabel: string; duration: number; unit: DelayUnit }> = [
+  { label: "5 sec", ptLabel: "5 seg", duration: 5, unit: "seconds" },
+  { label: "10 sec", ptLabel: "10 seg", duration: 10, unit: "seconds" },
+  { label: "15 sec", ptLabel: "15 seg", duration: 15, unit: "seconds" },
+  { label: "30 sec", ptLabel: "30 seg", duration: 30, unit: "seconds" },
+  { label: "5 min", ptLabel: "5 min", duration: 5, unit: "minutes" },
+  { label: "1 hour", ptLabel: "1 hora", duration: 1, unit: "hours" },
+  { label: "1 day", ptLabel: "1 dia", duration: 1, unit: "days" },
 ];
 
 function toLocalDateTimeInput(value?: string) {
@@ -119,10 +120,14 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
             <div className="flex gap-2">
               <input
                 type="number"
-                min={0}
+                min={unit === "seconds" ? 5 : 1}
                 value={duration}
                 onChange={(e) =>
-                  onChange({ ...data, duration: Math.max(0, parseInt(e.target.value) || 0), waitUntil: undefined })
+                  onChange({
+                    ...data,
+                    duration: Math.max(0, parseInt(e.target.value, 10) || 0),
+                    waitUntil: undefined,
+                  })
                 }
                 className="w-24 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
               />
@@ -162,7 +167,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
                         : "border border-border bg-card text-muted-foreground hover:border-purple-300 hover:text-purple-600"
                     )}
                   >
-                    {pt ? `${preset.duration} ${unitLabels[preset.unit].toLowerCase()}` : preset.label}
+                    {pt ? preset.ptLabel : preset.label}
                   </button>
                 );
               })}

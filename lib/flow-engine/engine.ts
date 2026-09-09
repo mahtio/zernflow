@@ -740,6 +740,9 @@ async function scheduleFlowResume(
   }
 }
 
+const INLINE_DELAY_MAX_MS = 30 * 1000; // 30 segundos máximo para inline
+const MIN_DELAY_SECONDS = 5; // Duração mínima recomendada em segundos
+
 async function executeDelay(
   supabase: SupabaseClient<Database>,
   data: DelayNodeData,
@@ -748,12 +751,29 @@ async function executeDelay(
   context: FlowExecutionContext
 ) {
   const configuredTime = data.waitUntil ? Date.parse(data.waitUntil) : NaN;
-  const duration = Number.isFinite(data.duration) ? Math.max(0, data.duration) : 0;
-  const delayMs = duration * (delayMultipliers[data.unit] || 1000);
-  const runAt = new Date(
-    Number.isFinite(configuredTime) ? configuredTime : Date.now() + delayMs
-  ).toISOString();
+  const rawDuration = Number.isFinite(data.duration) ? Math.max(0, data.duration) : 0;
 
+  // Se for em segundos e configurado menor que 5s, garante no mínimo 5s
+  const duration =
+    data.unit === "seconds" && rawDuration > 0
+      ? Math.max(MIN_DELAY_SECONDS, rawDuration)
+      : rawDuration;
+
+  const delayMs = duration * (delayMultipliers[data.unit] || 1000);
+  const effectiveDelayMs = Number.isFinite(configuredTime)
+    ? Math.max(0, configuredTime - Date.now())
+    : delayMs;
+
+  // Se o atraso for de até 30 segundos, dorme na memória e continua na mesma requisição
+  if (effectiveDelayMs <= INLINE_DELAY_MAX_MS) {
+    if (effectiveDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, effectiveDelayMs));
+    }
+    return; // Não retorna "pause", permitindo que traverseNodes siga para o próximo nó
+  }
+
+  // Se o atraso for maior que 30 segundos, agenda no banco e pausa a sessão para o Cron
+  const runAt = new Date(Date.now() + effectiveDelayMs).toISOString();
   await scheduleFlowResume(supabase, sessionId, nodeId, runAt, false, context);
   return "pause";
 }
