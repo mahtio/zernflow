@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { executeFlow } from "@/lib/flow-engine/engine";
+import { executeFlow, resumeWaitingSession } from "@/lib/flow-engine/engine";
 import { matchTrigger } from "@/lib/flow-engine/trigger-matcher";
 import { resolveWebhookSecret, verifyWebhookSignature } from "@/lib/zernio-webhook";
 import { upsertContactForSender } from "@/lib/inbox-sync";
@@ -289,29 +289,38 @@ async function processMessageEvent(
     );
 
     if (!handled) {
-      const trigger = await matchTrigger(supabase, {
+      const flowContext = {
+        triggerId: "",
+        flowId: "",
         channelId: channel.id,
-        workspaceId: channel.workspace_id,
+        contactId,
         conversationId: conversation.id,
-        message: incomingMessage,
-        isFirstMessage: !contact.existed,
-      });
-      if (trigger) {
-        try {
+        workspaceId: channel.workspace_id,
+        incomingMessage,
+        lateConversationId: conv.id,
+        lateAccountId: account.id,
+      };
+
+      try {
+        const resumed = await resumeWaitingSession(supabase, flowContext);
+        if (resumed) return;
+
+        const trigger = await matchTrigger(supabase, {
+          channelId: channel.id,
+          workspaceId: channel.workspace_id,
+          conversationId: conversation.id,
+          message: incomingMessage,
+          isFirstMessage: !contact.existed,
+        });
+        if (trigger) {
           await executeFlow(supabase, {
+            ...flowContext,
             triggerId: trigger.id,
             flowId: trigger.flow_id,
-            channelId: channel.id,
-            contactId,
-            conversationId: conversation.id,
-            workspaceId: channel.workspace_id,
-            incomingMessage,
-            lateConversationId: conv.id,
-            lateAccountId: account.id,
           });
-        } catch (err) {
-          console.error("Flow execution error:", err);
         }
+      } catch (err) {
+        console.error("Flow execution error:", err);
       }
     }
   }

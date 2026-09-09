@@ -38,19 +38,8 @@ export async function executeFlow(
     context.variables.message ??= context.incomingMessage.text;
   }
 
-  // Check for active session waiting for input
-  const { data: activeSession } = await supabase
-    .from("flow_sessions")
-    .select("*")
-    .eq("contact_id", context.contactId)
-    .eq("channel_id", context.channelId)
-    .eq("status", "active")
-    .eq("waiting_for_input", true)
-    .single();
-
-  if (activeSession) {
-    return resumeSession(supabase, activeSession, context);
-  }
+  // A reply must resume a waiting Smart Delay before evaluating a new flow.
+  if (await resumeWaitingSession(supabase, context)) return;
 
   // Load flow
   const { data: flow } = await supabase
@@ -133,6 +122,35 @@ const MAX_TRAVERSAL_DEPTH = 50;
 // Thrown before resumeSession advances current_node_id, so callers may retry
 // without cancelling the session.
 export class FlowLoadError extends Error {}
+
+export async function resumeWaitingSession(
+  supabase: SupabaseClient<Database>,
+  context: FlowExecutionContext
+): Promise<boolean> {
+  const { data: activeSession, error } = await supabase
+    .from("flow_sessions")
+    .select("*")
+    .eq("contact_id", context.contactId)
+    .eq("channel_id", context.channelId)
+    .eq("status", "active")
+    .eq("waiting_for_input", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    throw new FlowLoadError(
+      `waiting session for contact ${context.contactId} could not be loaded: ${error.message}`
+    );
+  }
+  if (!activeSession) return false;
+
+  await resumeSession(supabase, activeSession, {
+    ...context,
+    flowId: activeSession.flow_id,
+  });
+  return true;
+}
 
 export async function resumeSession(
   supabase: SupabaseClient<Database>,
