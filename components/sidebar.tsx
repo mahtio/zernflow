@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   GitBranch,
   MessageSquare,
@@ -16,9 +16,10 @@ import {
   LogOut,
   Moon,
   Sun,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { LanguageSelector } from "@/components/language-selector";
@@ -63,12 +64,25 @@ export function Sidebar({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
+  const [collapsed, setCollapsed] = useState(false);
   const dark = useSyncExternalStore(
     subscribeToThemeClass,
     () => document.documentElement.classList.contains("dark"),
     () => false
   );
+
+  useEffect(() => {
+    setCollapsed(localStorage.getItem("sidebar-collapsed") === "true");
+  }, []);
+
+  function toggleSidebar() {
+    setCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem("sidebar-collapsed", String(next));
+      return next;
+    });
+  }
 
   function toggleTheme() {
     const next = !dark;
@@ -82,52 +96,94 @@ export function Sidebar({
     router.refresh();
   }
 
+  const collapseLabel = locale === "pt-BR" ? "Recolher menu" : "Collapse menu";
+  const expandLabel = locale === "pt-BR" ? "Expandir menu" : "Expand menu";
+
   return (
-    <div className="flex h-full w-60 flex-col border-r border-border bg-sidebar">
-      <div className="border-b border-sidebar-border px-3 py-3">
-        <WorkspaceSwitcher current={workspace} workspaces={workspaces} />
+    <aside
+      className={cn(
+        "flex h-full shrink-0 flex-col border-r border-border bg-sidebar transition-[width] duration-200",
+        collapsed ? "w-16" : "w-60"
+      )}
+    >
+      <div
+        className={cn(
+          "border-b border-sidebar-border p-3",
+          collapsed ? "space-y-2" : "flex items-center gap-1"
+        )}
+      >
+        <div className={cn("min-w-0", collapsed ? "w-full" : "flex-1")}>
+          <WorkspaceSwitcher current={workspace} workspaces={workspaces} compact={collapsed} />
+        </div>
+        <button
+          type="button"
+          onClick={toggleSidebar}
+          aria-label={collapsed ? expandLabel : collapseLabel}
+          title={collapsed ? expandLabel : collapseLabel}
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/60 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            collapsed && "mx-auto"
+          )}
+        >
+          {collapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+        </button>
       </div>
 
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className={cn("flex-1 space-y-1", collapsed ? "p-2" : "p-3")}>
         {navigation.map((item) => {
           const isActive = pathname.startsWith(item.href);
           return (
             <Link
               key={item.key}
               href={item.href}
+              aria-label={t[item.key]}
+              title={collapsed ? t[item.key] : undefined}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                "flex items-center rounded-lg py-2 text-sm font-medium transition-colors",
+                collapsed ? "justify-center px-2" : "gap-3 px-3",
                 isActive
                   ? "bg-sidebar-accent text-sidebar-accent-foreground"
                   : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
               )}
             >
-              <item.icon className="h-4 w-4" />
-              {t[item.key]}
+              <item.icon className="h-4 w-4 shrink-0" />
+              {!collapsed && <span>{t[item.key]}</span>}
             </Link>
           );
         })}
       </nav>
 
-      <div className="border-t border-sidebar-border p-3 space-y-1">
-        <div className="px-1 py-1">
-          <LanguageSelector direction="up" />
+      <div className={cn("space-y-1 border-t border-sidebar-border", collapsed ? "p-2" : "p-3")}>
+        <div className={cn("py-1", !collapsed && "px-1")}>
+          <LanguageSelector direction="up" compact={collapsed} />
         </div>
         <button
+          type="button"
           onClick={toggleTheme}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          aria-label={dark ? t.lightMode : t.darkMode}
+          title={collapsed ? (dark ? t.lightMode : t.darkMode) : undefined}
+          className={cn(
+            "flex w-full items-center rounded-lg py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            collapsed ? "justify-center px-2" : "gap-3 px-3"
+          )}
         >
-          {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-          {dark ? t.lightMode : t.darkMode}
+          {dark ? <Sun className="h-4 w-4 shrink-0" /> : <Moon className="h-4 w-4 shrink-0" />}
+          {!collapsed && <span>{dark ? t.lightMode : t.darkMode}</span>}
         </button>
         <button
+          type="button"
           onClick={handleSignOut}
-          className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          aria-label={t.signOut}
+          title={collapsed ? t.signOut : undefined}
+          className={cn(
+            "flex w-full items-center rounded-lg py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+            collapsed ? "justify-center px-2" : "gap-3 px-3"
+          )}
         >
-          <LogOut className="h-4 w-4" />
-          {t.signOut}
+          <LogOut className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>{t.signOut}</span>}
         </button>
       </div>
-    </div>
+    </aside>
   );
 }

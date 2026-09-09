@@ -19,9 +19,14 @@ const LANGUAGES: LanguageOption[] = [
 interface LanguageSelectorProps {
   className?: string;
   direction?: "up" | "down";
+  compact?: boolean;
 }
 
-export function LanguageSelector({ className, direction = "down" }: LanguageSelectorProps) {
+export function LanguageSelector({
+  className,
+  direction = "down",
+  compact = false,
+}: LanguageSelectorProps) {
   const { locale, setLocale, t } = useLocale();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -60,17 +65,23 @@ export function LanguageSelector({ className, direction = "down" }: LanguageSele
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t.language}
-        className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        title={compact ? current.label : undefined}
+        className={cn(
+          "flex w-full items-center rounded-lg border border-border bg-card py-2 text-xs font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-2 focus:ring-ring",
+          compact ? "justify-center px-2" : "justify-between gap-2 px-3"
+        )}
       >
         <span className="flex items-center gap-2 truncate">
           <span className="text-sm leading-none">{current.flag}</span>
-          <span className="truncate">{current.label}</span>
+          {!compact && <span className="truncate">{current.label}</span>}
         </span>
-        <ChevronDown
-          className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200", {
-            "rotate-180": open,
-          })}
-        />
+        {!compact && (
+          <ChevronDown
+            className={cn("h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200", {
+              "rotate-180": open,
+            })}
+          />
+        )}
       </button>
 
       {open && (
@@ -78,8 +89,12 @@ export function LanguageSelector({ className, direction = "down" }: LanguageSele
           role="listbox"
           aria-label={t.language}
           className={cn(
-            "absolute z-50 w-full min-w-[180px] rounded-lg border border-border bg-card p-1 shadow-xl ring-1 ring-black/5 dark:ring-white/10 animate-in fade-in zoom-in-95 duration-100",
-            direction === "up" ? "bottom-full mb-1.5 left-0" : "top-full mt-1.5 right-0"
+            "absolute z-50 min-w-[180px] rounded-lg border border-border bg-card p-1 shadow-xl ring-1 ring-black/5 dark:ring-white/10 animate-in fade-in zoom-in-95 duration-100",
+            compact
+              ? "bottom-0 left-full ml-2"
+              : direction === "up"
+                ? "bottom-full left-0 mb-1.5 w-full"
+                : "right-0 top-full mt-1.5 w-full"
           )}
         >
           <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">

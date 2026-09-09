@@ -21,9 +21,11 @@ function avatarUrl(seed: string, size = 28) {
 export function WorkspaceSwitcher({
   current,
   workspaces,
+  compact = false,
 }: {
   current: { id: string; name: string };
   workspaces: WorkspaceItem[];
+  compact?: boolean;
 }) {
   const router = useRouter();
   const { locale } = useLocale();
@@ -83,26 +85,40 @@ export function WorkspaceSwitcher({
     <div ref={dropdownRef} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-sidebar-accent transition-colors"
+        aria-label={current.name}
+        title={compact ? current.name : undefined}
+        className={cn(
+          "flex w-full items-center rounded-lg py-1.5 text-left transition-colors hover:bg-sidebar-accent",
+          compact ? "justify-center px-1" : "gap-2 px-2"
+        )}
       >
         <img
           src={avatarUrl(current.id)}
           alt=""
-          className="h-7 w-7 rounded-md"
+          className="h-7 w-7 shrink-0 rounded-md"
         />
-        <span className="flex-1 truncate text-sm font-semibold text-sidebar-foreground">
-          {current.name}
-        </span>
-        <ChevronDown
-          className={cn(
-            "h-3.5 w-3.5 text-sidebar-foreground/50 transition-transform",
-            open && "rotate-180"
-          )}
-        />
+        {!compact && (
+          <>
+            <span className="flex-1 truncate text-sm font-semibold text-sidebar-foreground">
+              {current.name}
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 text-sidebar-foreground/50 transition-transform",
+                open && "rotate-180"
+              )}
+            />
+          </>
+        )}
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 rounded-lg border border-border bg-popover p-1 shadow-lg">
+        <div
+          className={cn(
+            "absolute top-full z-50 mt-1 min-w-52 rounded-lg border border-border bg-popover p-1 shadow-lg",
+            compact ? "left-full top-0 ml-2" : "left-0 right-0"
+          )}
+        >
           {/* Workspace list */}
           {workspaces.map((ws) => {
             const isActive = ws.id === current.id;
