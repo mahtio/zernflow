@@ -18,6 +18,7 @@ import {
   createEmptyFilter,
   type SegmentFilter,
 } from "@/components/segment-builder";
+import { useLocale } from "@/components/locale-provider";
 import type { Database } from "@/lib/types/database";
 
 type Tag = Database["public"]["Tables"]["tags"]["Row"];
@@ -28,17 +29,21 @@ type ContactWithTags = Database["public"]["Tables"]["contacts"]["Row"] & {
   }[];
 };
 
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "Never";
+function formatDate(
+  dateStr: string | null,
+  locale: string,
+  t: ReturnType<typeof useLocale>["t"]
+): string {
+  if (!dateStr) return t.never;
   const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Yesterday";
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  if (diffDays === 0) return t.today;
+  if (diffDays === 1) return t.yesterday;
+  if (diffDays < 7) return t.daysAgo(diffDays);
+  return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
 export function ContactsView({
@@ -50,6 +55,7 @@ export function ContactsView({
   tags: Tag[];
   workspaceId: string;
 }) {
+  const { locale, t } = useLocale();
   const [search, setSearch] = useState("");
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [showSegmentBuilder, setShowSegmentBuilder] = useState(false);
@@ -81,9 +87,9 @@ export function ContactsView({
       <div className="border-b border-border px-8 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Contacts</h1>
+            <h1 className="text-2xl font-bold">{t.contacts}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {contacts.length} contact{contacts.length !== 1 ? "s" : ""} in your workspace
+              {t.contactsInWorkspace(contacts.length)}
             </p>
           </div>
         </div>
@@ -94,7 +100,7 @@ export function ContactsView({
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search by name or email..."
+              placeholder={t.searchContacts}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -110,7 +116,7 @@ export function ContactsView({
             )}
           >
             <Filter className="h-4 w-4" />
-            Segment
+            {t.segment}
             <ChevronDown
               className={cn(
                 "h-3.5 w-3.5 transition-transform",
@@ -143,7 +149,7 @@ export function ContactsView({
                   : "bg-muted text-muted-foreground hover:bg-accent"
               )}
             >
-              All
+              {t.all}
             </button>
             {tags.map((tag) => (
               <button
@@ -179,10 +185,10 @@ export function ContactsView({
           <div className="flex flex-col items-center justify-center py-20">
             <Users className="h-10 w-10 text-muted-foreground/40" />
             <p className="mt-3 text-sm font-medium text-muted-foreground">
-              No contacts found
+              {t.noContactsFound}
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Contacts are created automatically when someone messages your channels
+              {t.contactsEmptyDescription}
             </p>
           </div>
         ) : (
@@ -190,19 +196,19 @@ export function ContactsView({
             <thead>
               <tr className="border-b border-border bg-muted/50 text-left">
                 <th className="px-8 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  Name
+                  {t.tableName}
                 </th>
                 <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  Email
+                  {t.tableEmail}
                 </th>
                 <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  Last Interaction
+                  {t.lastInteraction}
                 </th>
                 <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  Tags
+                  {t.tags}
                 </th>
                 <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  Subscribed
+                  {t.subscribed}
                 </th>
               </tr>
             </thead>
@@ -247,14 +253,14 @@ export function ContactsView({
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground/50">
-                          No email
+                          {t.noEmail}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                         <Calendar className="h-3 w-3" />
-                        {formatDate(contact.last_interaction_at)}
+                        {formatDate(contact.last_interaction_at, locale, t)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -285,7 +291,7 @@ export function ContactsView({
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground/50">
-                          No tags
+                          {t.noTags}
                         </span>
                       )}
                     </td>
@@ -293,12 +299,12 @@ export function ContactsView({
                       {contact.is_subscribed ? (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
                           <CheckCircle className="h-3.5 w-3.5" />
-                          Yes
+                          {t.yes}
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
                           <XCircle className="h-3.5 w-3.5" />
-                          No
+                          {t.no}
                         </span>
                       )}
                     </td>

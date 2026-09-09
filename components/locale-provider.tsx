@@ -34,6 +34,32 @@ type Messages = {
   creatingAccount: string;
   alreadyHaveAccount: string;
   language: string;
+  contactsInWorkspace: (count: number) => string;
+  searchContacts: string;
+  segment: string;
+  all: string;
+  noContactsFound: string;
+  contactsEmptyDescription: string;
+  tableName: string;
+  tableEmail: string;
+  lastInteraction: string;
+  tags: string;
+  subscribed: string;
+  noEmail: string;
+  noTags: string;
+  yes: string;
+  no: string;
+  never: string;
+  today: string;
+  yesterday: string;
+  daysAgo: (days: number) => string;
+  contactInfo: string;
+  noConversationsYet: string;
+  inboxEmptyDescription: string;
+  syncConversations: string;
+  syncing: string;
+  syncFailed: string;
+  syncConnectionFailed: string;
 };
 
 const messages: Record<Locale, Messages> = {
@@ -67,6 +93,32 @@ const messages: Record<Locale, Messages> = {
     creatingAccount: "Creating account...",
     alreadyHaveAccount: "Already have an account?",
     language: "Language",
+    contactsInWorkspace: (count) => `${count} contact${count !== 1 ? "s" : ""} in your workspace`,
+    searchContacts: "Search by name or email...",
+    segment: "Segment",
+    all: "All",
+    noContactsFound: "No contacts found",
+    contactsEmptyDescription: "Contacts are created automatically when someone messages your channels",
+    tableName: "Name",
+    tableEmail: "Email",
+    lastInteraction: "Last Interaction",
+    tags: "Tags",
+    subscribed: "Subscribed",
+    noEmail: "No email",
+    noTags: "No tags",
+    yes: "Yes",
+    no: "No",
+    never: "Never",
+    today: "Today",
+    yesterday: "Yesterday",
+    daysAgo: (days) => `${days}d ago`,
+    contactInfo: "Contact info",
+    noConversationsYet: "No conversations yet",
+    inboxEmptyDescription: "If you already have conversations in Zernio, sync them to bring them into your inbox.",
+    syncConversations: "Sync conversations",
+    syncing: "Syncing...",
+    syncFailed: "Sync failed",
+    syncConnectionFailed: "Failed to sync. Check your connection.",
   },
   "pt-BR": {
     flows: "Fluxos",
@@ -98,6 +150,32 @@ const messages: Record<Locale, Messages> = {
     creatingAccount: "Criando conta...",
     alreadyHaveAccount: "Já tem uma conta?",
     language: "Idioma",
+    contactsInWorkspace: (count) => `${count} contato${count !== 1 ? "s" : ""} no seu espaço de trabalho`,
+    searchContacts: "Buscar por nome ou e-mail...",
+    segment: "Segmento",
+    all: "Todos",
+    noContactsFound: "Nenhum contato encontrado",
+    contactsEmptyDescription: "Os contatos são criados automaticamente quando alguém envia uma mensagem pelos seus canais",
+    tableName: "Nome",
+    tableEmail: "E-mail",
+    lastInteraction: "Última interação",
+    tags: "Etiquetas",
+    subscribed: "Inscrito",
+    noEmail: "Sem e-mail",
+    noTags: "Sem etiquetas",
+    yes: "Sim",
+    no: "Não",
+    never: "Nunca",
+    today: "Hoje",
+    yesterday: "Ontem",
+    daysAgo: (days) => `há ${days} dia${days !== 1 ? "s" : ""}`,
+    contactInfo: "Informações do contato",
+    noConversationsYet: "Ainda não há conversas",
+    inboxEmptyDescription: "Se você já tem conversas no Zernio, sincronize-as para exibi-las na sua caixa de entrada.",
+    syncConversations: "Sincronizar conversas",
+    syncing: "Sincronizando...",
+    syncFailed: "Falha na sincronização",
+    syncConnectionFailed: "Não foi possível sincronizar. Verifique sua conexão.",
   },
 };
 
@@ -110,12 +188,14 @@ type LocaleContextValue = {
 const LocaleContext = createContext<LocaleContextValue | null>(null);
 
 export function LocaleProvider({ children }: { children: React.ReactNode }) {
-  const [locale, setLocaleState] = useState<Locale>("en");
+  const [locale, setLocaleState] = useState<Locale>("pt-BR");
 
   useEffect(() => {
     const savedLocale = localStorage.getItem("locale");
     if (savedLocale === "en" || savedLocale === "pt-BR") {
       setLocaleState(savedLocale);
+    } else {
+      localStorage.setItem("locale", "pt-BR");
     }
   }, []);
 
