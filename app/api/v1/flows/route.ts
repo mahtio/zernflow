@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getApiWorkspaceId } from "@/lib/api-workspace";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
@@ -8,19 +9,13 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) return NextResponse.json({ error: "No workspace" }, { status: 404 });
+  const workspaceId = await getApiWorkspaceId(supabase, user.id);
+  if (!workspaceId) return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
   const { data: flows, error } = await supabase
     .from("flows")
     .select("id, name, description, status, version, published_at, created_at, updated_at")
-    .eq("workspace_id", membership.workspace_id)
+    .eq("workspace_id", workspaceId)
     .order("updated_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -35,21 +30,15 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) return NextResponse.json({ error: "No workspace" }, { status: 404 });
+  const workspaceId = await getApiWorkspaceId(supabase, user.id);
+  if (!workspaceId) return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
   const body = await request.json();
 
   const { data: flow, error } = await supabase
     .from("flows")
     .insert({
-      workspace_id: membership.workspace_id,
+      workspace_id: workspaceId,
       name: body.name || "Untitled Flow",
       description: body.description || null,
       nodes: body.nodes || [],

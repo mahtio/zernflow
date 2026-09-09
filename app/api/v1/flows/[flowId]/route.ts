@@ -1,21 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getApiWorkspaceId } from "@/lib/api-workspace";
 import { createClient } from "@/lib/supabase/server";
-
-async function getWorkspaceId(supabase: Awaited<ReturnType<typeof createClient>>) {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
-
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  return membership?.workspace_id || null;
-}
 
 export async function GET(
   _request: NextRequest,
@@ -23,9 +8,12 @@ export async function GET(
 ) {
   const { flowId } = await params;
   const supabase = await createClient();
-  const workspaceId = await getWorkspaceId(supabase);
-  if (!workspaceId)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await getApiWorkspaceId(supabase, user.id);
+  if (!workspaceId)
+    return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
   const { data: flow, error } = await supabase
     .from("flows")
@@ -46,9 +34,12 @@ export async function PUT(
 ) {
   const { flowId } = await params;
   const supabase = await createClient();
-  const workspaceId = await getWorkspaceId(supabase);
-  if (!workspaceId)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await getApiWorkspaceId(supabase, user.id);
+  if (!workspaceId)
+    return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
   const body = await request.json();
 
@@ -79,9 +70,12 @@ export async function DELETE(
 ) {
   const { flowId } = await params;
   const supabase = await createClient();
-  const workspaceId = await getWorkspaceId(supabase);
-  if (!workspaceId)
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const workspaceId = await getApiWorkspaceId(supabase, user.id);
+  if (!workspaceId)
+    return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
   const { error } = await supabase
     .from("flows")

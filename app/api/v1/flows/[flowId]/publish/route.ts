@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getApiWorkspaceId } from "@/lib/api-workspace";
 import { createClient } from "@/lib/supabase/server";
 import { BUILDER_TRIGGER_TYPES, buildDesiredTriggers } from "@/lib/flow-triggers";
 
@@ -15,14 +16,8 @@ export async function POST(
   if (!user)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership)
+  const workspaceId = await getApiWorkspaceId(supabase, user.id);
+  if (!workspaceId)
     return NextResponse.json({ error: "No workspace" }, { status: 404 });
 
   // Get current flow
@@ -30,7 +25,7 @@ export async function POST(
     .from("flows")
     .select("*")
     .eq("id", flowId)
-    .eq("workspace_id", membership.workspace_id)
+    .eq("workspace_id", workspaceId)
     .single();
 
   if (error || !flow)
