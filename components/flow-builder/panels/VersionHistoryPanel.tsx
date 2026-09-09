@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, RotateCcw, Loader2, History } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useLocale } from "@/components/locale-provider";
 
 interface Version {
   id: string;
@@ -25,6 +26,8 @@ export function VersionHistoryPanel({
   onClose,
   onRestore,
 }: VersionHistoryPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [versions, setVersions] = useState<Version[]>([]);
   const [loading, setLoading] = useState(true);
   const [restoring, setRestoring] = useState<string | null>(null);
@@ -61,7 +64,7 @@ export function VersionHistoryPanel({
   }
 
   function formatDate(dateString: string) {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    return new Date(dateString).toLocaleDateString(locale, {
       month: "short",
       day: "numeric",
       hour: "numeric",
@@ -74,7 +77,7 @@ export function VersionHistoryPanel({
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold">Version History</h3>
+          <h3 className="text-sm font-semibold">{pt ? "Histórico de versões" : "Version History"}</h3>
         </div>
         <button
           onClick={onClose}
@@ -93,10 +96,10 @@ export function VersionHistoryPanel({
           <div className="py-8 text-center">
             <History className="mx-auto h-8 w-8 text-muted-foreground/50" />
             <p className="mt-2 text-sm text-muted-foreground">
-              No versions yet
+              {pt ? "Ainda não há versões" : "No versions yet"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Publish your flow to create the first version.
+              {pt ? "Publique o fluxo para criar a primeira versão." : "Publish your flow to create the first version."}
             </p>
           </div>
         ) : (
@@ -111,7 +114,7 @@ export function VersionHistoryPanel({
                     <span className="text-sm font-medium">v{v.version}</span>
                     {v.version === currentVersion && (
                       <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
-                        current
+                        {pt ? "atual" : "current"}
                       </span>
                     )}
                   </div>
@@ -126,7 +129,7 @@ export function VersionHistoryPanel({
                       ) : (
                         <RotateCcw className="h-3 w-3" />
                       )}
-                      Restore
+                      {pt ? "Restaurar" : "Restore"}
                     </button>
                   )}
                 </div>
@@ -143,9 +146,10 @@ export function VersionHistoryPanel({
       </div>
       <ConfirmDialog
         open={!!confirmRestore}
-        title="Restore version"
-        message="The current draft will be replaced with this version's nodes and edges."
-        confirmLabel="Restore"
+        title={pt ? "Restaurar versão" : "Restore version"}
+        message={pt ? "O rascunho atual será substituído pelos nós e conexões desta versão." : "The current draft will be replaced with this version's nodes and edges."}
+        confirmLabel={pt ? "Restaurar" : "Restore"}
+        cancelLabel={pt ? "Cancelar" : "Cancel"}
         onConfirm={() => {
           if (confirmRestore) handleRestore(confirmRestore);
           setConfirmRestore(null);

@@ -13,6 +13,7 @@ import {
   Cog,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 import type { NodeType } from "@/lib/types/database";
 
 export interface ActionNodeProps {
@@ -97,15 +98,15 @@ const actionConfig: Record<
   },
 };
 
-function getSummary(nodeData: ActionNodeProps): string | null {
+function getSummary(nodeData: ActionNodeProps, pt: boolean): string | null {
   const type = nodeData.actionType;
   if (!type) return null;
 
   switch (type) {
     case "addTag":
-      return nodeData.tagName ? `Add "${nodeData.tagName}"` : null;
+      return nodeData.tagName ? `${pt ? "Adicionar" : "Add"} "${nodeData.tagName}"` : null;
     case "removeTag":
-      return nodeData.tagName ? `Remove "${nodeData.tagName}"` : null;
+      return nodeData.tagName ? `${pt ? "Remover" : "Remove"} "${nodeData.tagName}"` : null;
     case "setCustomField":
       return nodeData.fieldSlug
         ? `${nodeData.fieldSlug} = ${nodeData.value || "..."}`
@@ -115,13 +116,13 @@ function getSummary(nodeData: ActionNodeProps): string | null {
         ? `${nodeData.method || "GET"} ${nodeData.url}`
         : null;
     case "goToFlow":
-      return nodeData.flowId ? `Flow: ${nodeData.flowId.slice(0, 8)}...` : null;
+      return nodeData.flowId ? `${pt ? "Fluxo" : "Flow"}: ${nodeData.flowId.slice(0, 8)}...` : null;
     case "humanTakeover":
-      return nodeData.message || "Hand off to agent";
+      return nodeData.message || (pt ? "Transferir para atendente" : "Hand off to agent");
     case "subscribe":
-      return "Subscribe contact";
+      return pt ? "Inscrever contato" : "Subscribe contact";
     case "unsubscribe":
-      return "Unsubscribe contact";
+      return pt ? "Cancelar inscrição do contato" : "Unsubscribe contact";
     case "abSplit":
       if (nodeData.paths && nodeData.paths.length > 0) {
         return nodeData.paths.map((p) => `${p.name}: ${p.weight}%`).join(", ");
@@ -129,7 +130,7 @@ function getSummary(nodeData: ActionNodeProps): string | null {
       return null;
     case "smartDelay":
       return nodeData.timeout
-        ? `Wait up to ${nodeData.timeout} ${nodeData.timeoutUnit || "minutes"}`
+        ? `${pt ? "Aguardar até" : "Wait up to"} ${nodeData.timeout} ${nodeData.timeoutUnit || (pt ? "minutos" : "minutes")}`
         : null;
     default:
       return null;
@@ -137,6 +138,8 @@ function getSummary(nodeData: ActionNodeProps): string | null {
 }
 
 export function ActionNode({ data, selected }: NodeProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const nodeData = data as ActionNodeProps;
   const actionType = nodeData.actionType || "addTag";
   const config = actionConfig[actionType] || {
@@ -145,8 +148,15 @@ export function ActionNode({ data, selected }: NodeProps) {
     color: "bg-gray-500",
   };
   const Icon = config.icon;
-  const label = nodeData.label || config.label;
-  const summary = getSummary(nodeData);
+  const translatedLabels: Record<string, string> = {
+    addTag: "Adicionar etiqueta", removeTag: "Remover etiqueta", setCustomField: "Definir campo",
+    httpRequest: "Requisição HTTP", goToFlow: "Ir para fluxo", humanTakeover: "Atendimento humano",
+    subscribe: "Inscrever", unsubscribe: "Cancelar inscrição", commentReply: "Responder comentário",
+    privateReply: "Resposta privada", abSplit: "Divisão A/B", smartDelay: "Atraso inteligente",
+  };
+  const typeLabel = pt ? translatedLabels[actionType] ?? "Ação" : config.label;
+  const label = nodeData.label || typeLabel;
+  const summary = getSummary(nodeData, pt);
 
   const isAbSplit = actionType === "abSplit";
   const paths = isAbSplit ? nodeData.paths || [] : [];
@@ -170,14 +180,14 @@ export function ActionNode({ data, selected }: NodeProps) {
         )}
       >
         <Icon className="h-3.5 w-3.5" />
-        <span className="text-xs font-semibold">{config.label}</span>
+        <span className="text-xs font-semibold">{typeLabel}</span>
       </div>
       <div className="p-3">
         <p className="text-sm font-medium">{label}</p>
         {summary ? (
           <p className="mt-1 truncate text-xs text-muted-foreground">{summary}</p>
         ) : (
-          <p className="mt-1 text-xs text-muted-foreground italic">Not configured</p>
+          <p className="mt-1 text-xs text-muted-foreground italic">{pt ? "Não configurado" : "Not configured"}</p>
         )}
       </div>
       {isAbSplit && paths.length > 0 ? (

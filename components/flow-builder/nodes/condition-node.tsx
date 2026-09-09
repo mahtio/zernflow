@@ -3,6 +3,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 
 export interface ConditionNodeProps {
   label?: string;
@@ -24,8 +25,10 @@ const operatorLabels: Record<string, string> = {
 };
 
 export function ConditionNode({ data, selected }: NodeProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const nodeData = data as ConditionNodeProps;
-  const label = nodeData.label || "Condition";
+  const label = nodeData.label || (pt ? "Condição" : "Condition");
   const conditions = nodeData.conditions || [];
   const logic = nodeData.logic || "and";
 
@@ -43,7 +46,7 @@ export function ConditionNode({ data, selected }: NodeProps) {
       />
       <div className="flex items-center gap-2 rounded-t-lg bg-amber-500 px-3 py-2 text-white">
         <GitBranch className="h-3.5 w-3.5" />
-        <span className="text-xs font-semibold">Condition</span>
+        <span className="text-xs font-semibold">{pt ? "Condição" : "Condition"}</span>
       </div>
       <div className="p-3">
         <p className="text-sm font-medium">{label}</p>
@@ -61,19 +64,19 @@ export function ConditionNode({ data, selected }: NodeProps) {
             ))}
             {conditions.length > 2 && (
               <p className="text-xs text-muted-foreground">
-                +{conditions.length - 2} more
+                +{conditions.length - 2} {pt ? "mais" : "more"}
               </p>
             )}
           </div>
         ) : (
-          <p className="mt-1 text-xs text-muted-foreground italic">No conditions set</p>
+          <p className="mt-1 text-xs text-muted-foreground italic">{pt ? "Nenhuma condição definida" : "No conditions set"}</p>
         )}
       </div>
       <div className="flex justify-between border-t border-border px-3 py-1.5">
         <span className="text-[10px] font-medium text-emerald-600">
-          Yes
+          {pt ? "Sim" : "Yes"}
         </span>
-        <span className="text-[10px] font-medium text-red-500">No</span>
+        <span className="text-[10px] font-medium text-red-500">{pt ? "Não" : "No"}</span>
       </div>
       <Handle
         type="source"

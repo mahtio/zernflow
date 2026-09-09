@@ -1,5 +1,7 @@
 "use client";
 
+import { useLocale } from "@/components/locale-provider";
+
 const POPULAR_MODELS = [
   { id: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
   { id: "openai/gpt-4o", label: "GPT-4o" },
@@ -23,6 +25,8 @@ interface AiResponsePanelProps {
 }
 
 export function AiResponsePanel({ data: rawData, onChange }: AiResponsePanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const data = rawData as AiResponsePanelData;
   const currentModel = data.model || "openai/gpt-4o-mini";
 
@@ -31,24 +35,24 @@ export function AiResponsePanel({ data: rawData, onChange }: AiResponsePanelProp
       {/* System Prompt */}
       <div>
         <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-          System Prompt
+          {pt ? "Instrução do sistema" : "System Prompt"}
         </label>
         <textarea
           value={data.systemPrompt || ""}
           onChange={(e) => onChange({ ...data, systemPrompt: e.target.value })}
-          placeholder="You are a helpful customer support agent..."
+          placeholder={pt ? "Você é um agente prestativo de suporte ao cliente..." : "You are a helpful customer support agent..."}
           rows={8}
           className="w-full resize-none rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
         <p className="mt-1 text-[11px] text-muted-foreground/60">
-          Instructions for how the AI should behave and respond.
+          {pt ? "Instruções sobre como a IA deve se comportar e responder." : "Instructions for how the AI should behave and respond."}
         </p>
       </div>
 
       {/* Model */}
       <div>
         <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-          Model
+          {pt ? "Modelo" : "Model"}
         </label>
         <input
           type="text"
@@ -83,14 +87,14 @@ export function AiResponsePanel({ data: rawData, onChange }: AiResponsePanelProp
           >
             Vercel AI Gateway
           </a>
-          . Format: provider/model-name
+          . {pt ? "Formato: provedor/nome-do-modelo" : "Format: provider/model-name"}
         </p>
       </div>
 
       {/* Temperature */}
       <div>
         <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-xs font-medium text-muted-foreground">Temperature</label>
+          <label className="text-xs font-medium text-muted-foreground">{pt ? "Temperatura" : "Temperature"}</label>
           <span className="text-xs text-muted-foreground">{data.temperature ?? 0.7}</span>
         </div>
         <input
@@ -103,15 +107,15 @@ export function AiResponsePanel({ data: rawData, onChange }: AiResponsePanelProp
           className="w-full"
         />
         <div className="mt-1 flex justify-between text-[11px] text-muted-foreground/60">
-          <span>Precise</span>
-          <span>Creative</span>
+          <span>{pt ? "Preciso" : "Precise"}</span>
+          <span>{pt ? "Criativo" : "Creative"}</span>
         </div>
       </div>
 
       {/* Max Tokens */}
       <div>
         <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-          Max Tokens
+          {pt ? "Máximo de tokens" : "Max Tokens"}
         </label>
         <input
           type="number"
@@ -122,14 +126,14 @@ export function AiResponsePanel({ data: rawData, onChange }: AiResponsePanelProp
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
         <p className="mt-1 text-[11px] text-muted-foreground/60">
-          Maximum length of the AI response.
+          {pt ? "Tamanho máximo da resposta da IA." : "Maximum length of the AI response."}
         </p>
       </div>
 
       {/* Context Messages */}
       <div>
         <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-          Context Messages
+          {pt ? "Mensagens de contexto" : "Context Messages"}
         </label>
         <input
           type="number"
@@ -140,7 +144,7 @@ export function AiResponsePanel({ data: rawData, onChange }: AiResponsePanelProp
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
         <p className="mt-1 text-[11px] text-muted-foreground/60">
-          How many past messages to include as context for the AI.
+          {pt ? "Quantidade de mensagens anteriores incluídas como contexto para a IA." : "How many past messages to include as context for the AI."}
         </p>
       </div>
 
@@ -153,12 +157,11 @@ export function AiResponsePanel({ data: rawData, onChange }: AiResponsePanelProp
             onChange={(e) => onChange({ ...data, sendDirectly: e.target.checked })}
             className="h-3.5 w-3.5 rounded border-border text-blue-500 focus:ring-blue-500"
           />
-          Send response automatically
+          {pt ? "Enviar resposta automaticamente" : "Send response automatically"}
         </label>
         <p className="mt-1 text-[11px] text-muted-foreground/60">
-          The generated response is always available to later nodes as{" "}
-          {"{{ai_response}}"}. Turn this off to only store it and send it
-          yourself with a Send Message node.
+          {pt ? "A resposta gerada sempre fica disponível para os próximos nós como " : "The generated response is always available to later nodes as "}
+          {"{{ai_response}}"}. {pt ? "Desative para apenas armazená-la e enviá-la usando um nó Enviar mensagem." : "Turn this off to only store it and send it yourself with a Send Message node."}
         </p>
       </div>
     </div>

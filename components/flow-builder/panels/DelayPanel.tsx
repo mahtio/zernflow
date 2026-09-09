@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 
 type DelayUnit = "seconds" | "minutes" | "hours" | "days";
 type DelayMode = "duration" | "until";
@@ -43,6 +44,11 @@ function toLocalDateTimeInput(value?: string) {
 }
 
 export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const unitLabels: Record<DelayUnit, string> = pt
+    ? { seconds: "Segundos", minutes: "Minutos", hours: "Horas", days: "Dias" }
+    : { seconds: "Seconds", minutes: "Minutes", hours: "Hours", days: "Days" };
   const data = rawData as DelayPanelData;
   const duration = data.duration || 0;
   const unit = data.unit || "minutes";
@@ -73,7 +79,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
       {/* Mode Toggle */}
       <div>
         <label className="mb-2 block text-xs font-semibold text-foreground">
-          Delay Type
+          {pt ? "Tipo de atraso" : "Delay Type"}
         </label>
         <div className="flex rounded-lg border border-border bg-muted p-1">
           <button
@@ -86,7 +92,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Wait for duration
+            {pt ? "Aguardar por duração" : "Wait for duration"}
           </button>
           <button
             type="button"
@@ -98,7 +104,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
-            Wait until
+            {pt ? "Aguardar até" : "Wait until"}
           </button>
         </div>
       </div>
@@ -108,7 +114,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
           {/* Duration Input */}
           <div>
             <label className="mb-2 block text-xs font-semibold text-foreground">
-              Duration
+              {pt ? "Duração" : "Duration"}
             </label>
             <div className="flex gap-2">
               <input
@@ -129,7 +135,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
               >
                 {unitOptions.map((u) => (
                   <option key={u.value} value={u.value}>
-                    {u.label}
+                    {unitLabels[u.value]}
                   </option>
                 ))}
               </select>
@@ -139,7 +145,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
           {/* Presets */}
           <div>
             <label className="mb-2 block text-xs font-semibold text-foreground">
-              Quick presets
+              {pt ? "Atalhos rápidos" : "Quick presets"}
             </label>
             <div className="flex flex-wrap gap-2">
               {presets.map((preset) => {
@@ -156,7 +162,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
                         : "border border-border bg-card text-muted-foreground hover:border-purple-300 hover:text-purple-600"
                     )}
                   >
-                    {preset.label}
+                    {pt ? `${preset.duration} ${unitLabels[preset.unit].toLowerCase()}` : preset.label}
                   </button>
                 );
               })}
@@ -167,7 +173,7 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
         /* Wait Until */
         <div>
           <label className="mb-2 block text-xs font-semibold text-foreground">
-            Wait until date/time
+            {pt ? "Aguardar até a data e hora" : "Wait until date/time"}
           </label>
           <input
             type="datetime-local"
@@ -183,22 +189,22 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
           />
           <p className="mt-1.5 text-xs text-muted-foreground">
-            The flow will pause until this specific date and time.
+            {pt ? "O fluxo ficará pausado até esta data e hora." : "The flow will pause until this specific date and time."}
           </p>
         </div>
       )}
 
       {/* Summary */}
       <div className="rounded-lg border border-border bg-muted p-3">
-        <p className="text-xs font-medium text-muted-foreground">Preview</p>
+        <p className="text-xs font-medium text-muted-foreground">{pt ? "Prévia" : "Preview"}</p>
         <p className="mt-1 text-sm text-foreground">
           {mode === "duration"
             ? duration > 0
-              ? `Wait ${duration} ${unit} before continuing`
-              : "No delay configured"
+              ? (pt ? `Aguardar ${duration} ${unitLabels[unit].toLowerCase()} antes de continuar` : `Wait ${duration} ${unit} before continuing`)
+              : (pt ? "Nenhum atraso configurado" : "No delay configured")
             : data.waitUntil
-              ? `Wait until ${new Date(data.waitUntil).toLocaleString()}`
-              : "No date selected"}
+              ? (pt ? `Aguardar até ${new Date(data.waitUntil).toLocaleString(locale)}` : `Wait until ${new Date(data.waitUntil).toLocaleString()}`)
+              : (pt ? "Nenhuma data selecionada" : "No date selected")}
         </p>
       </div>
     </div>

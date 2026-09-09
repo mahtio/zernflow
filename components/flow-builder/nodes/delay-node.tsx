@@ -3,6 +3,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 
 export interface DelayNodeProps {
   label?: string;
@@ -11,13 +12,18 @@ export interface DelayNodeProps {
 }
 
 export function DelayNode({ data, selected }: NodeProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const nodeData = data as DelayNodeProps;
-  const label = nodeData.label || "Delay";
+  const label = nodeData.label || (pt ? "Atraso" : "Delay");
   const duration = nodeData.duration || 0;
   const unit = nodeData.unit || "minutes";
+  const unitLabels = pt
+    ? { seconds: "segundos", minutes: "minutos", hours: "horas", days: "dias" }
+    : { seconds: "seconds", minutes: "minutes", hours: "hours", days: "days" };
 
   const displayDuration =
-    duration > 0 ? `${duration} ${unit}` : "Not configured";
+    duration > 0 ? `${duration} ${unitLabels[unit]}` : (pt ? "Não configurado" : "Not configured");
 
   return (
     <div
@@ -33,7 +39,7 @@ export function DelayNode({ data, selected }: NodeProps) {
       />
       <div className="flex items-center gap-2 rounded-t-lg bg-purple-500 px-3 py-2 text-white">
         <Clock className="h-3.5 w-3.5" />
-        <span className="text-xs font-semibold">Delay</span>
+        <span className="text-xs font-semibold">{pt ? "Atraso" : "Delay"}</span>
       </div>
       <div className="p-3">
         <p className="text-sm font-medium">{label}</p>

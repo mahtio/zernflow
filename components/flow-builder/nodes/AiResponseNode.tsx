@@ -3,6 +3,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 
 export interface AiResponseNodeProps {
   label?: string;
@@ -11,8 +12,10 @@ export interface AiResponseNodeProps {
 }
 
 export function AiResponseNode({ data, selected }: NodeProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const nodeData = data as AiResponseNodeProps;
-  const label = nodeData.label || "AI Response";
+  const label = nodeData.label || (pt ? "Resposta com IA" : "AI Response");
   const prompt = nodeData.systemPrompt;
 
   return (
@@ -29,7 +32,7 @@ export function AiResponseNode({ data, selected }: NodeProps) {
       />
       <div className="flex items-center gap-2 rounded-t-lg bg-violet-500 px-3 py-2 text-white">
         <Sparkles className="h-3.5 w-3.5" />
-        <span className="text-xs font-semibold">AI Response</span>
+        <span className="text-xs font-semibold">{pt ? "Resposta com IA" : "AI Response"}</span>
       </div>
       <div className="p-3">
         <p className="text-sm font-medium">{label}</p>
@@ -38,7 +41,7 @@ export function AiResponseNode({ data, selected }: NodeProps) {
             {prompt}
           </p>
         ) : (
-          <p className="mt-1 text-xs text-muted-foreground italic">No prompt configured</p>
+          <p className="mt-1 text-xs text-muted-foreground italic">{pt ? "Nenhuma instrução configurada" : "No prompt configured"}</p>
         )}
         {nodeData.model && (
           <div className="mt-2">

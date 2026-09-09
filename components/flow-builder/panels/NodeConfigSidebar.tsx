@@ -3,6 +3,7 @@
 import { useCallback, useEffect } from "react";
 import { X, Trash2, Zap, MessageSquare, GitBranch, Clock, Cog, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 import type { Edge, Node } from "@xyflow/react";
 
 import { TriggerPanel } from "./TriggerPanel";
@@ -132,8 +133,12 @@ export function NodeConfigSidebar({
   onClose,
   onDelete,
 }: NodeConfigSidebarProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const nodeType = node.type || "action";
   const config = nodeTypeConfig[nodeType] || nodeTypeConfig.action;
+  const translatedLabels: Record<string, string> = { trigger: "Gatilho", sendMessage: "Enviar mensagem", condition: "Condição", delay: "Atraso", aiResponse: "Resposta com IA", action: "Ação" };
+  const configLabel = pt ? translatedLabels[nodeType] ?? "Ação" : config.label;
   const Icon = config.icon;
 
   // Close on Escape
@@ -193,7 +198,7 @@ export function NodeConfigSidebar({
       default:
         return (
           <p className="text-sm text-muted-foreground">
-            No configuration panel available for this node type.
+            {pt ? "Não há painel de configuração disponível para este tipo de nó." : "No configuration panel available for this node type."}
           </p>
         );
     }
@@ -214,7 +219,7 @@ export function NodeConfigSidebar({
             <Icon className="h-3.5 w-3.5" />
           </div>
           <div>
-            <p className="text-sm font-semibold text-foreground">{config.label}</p>
+            <p className="text-sm font-semibold text-foreground">{configLabel}</p>
             <p className="text-[11px] text-muted-foreground">
               ID: {node.id.slice(0, 12)}...
             </p>
@@ -225,7 +230,7 @@ export function NodeConfigSidebar({
             type="button"
             onClick={() => onDelete(node.id)}
             className="rounded-lg p-1.5 text-muted-foreground/60 hover:bg-red-50 dark:hover:bg-red-950 hover:text-red-500"
-            title="Delete node"
+            title={pt ? "Excluir nó" : "Delete node"}
           >
             <Trash2 className="h-4 w-4" />
           </button>
@@ -242,13 +247,13 @@ export function NodeConfigSidebar({
       {/* Node Label */}
       <div className="border-b border-border px-4 py-3">
         <label className="mb-1.5 block text-xs font-semibold text-foreground">
-          Node Name
+          {pt ? "Nome do nó" : "Node Name"}
         </label>
         <input
           type="text"
           value={(node.data as Record<string, unknown>).label as string || ""}
           onChange={(e) => handleLabelChange(e.target.value)}
-          placeholder={config.label}
+          placeholder={configLabel}
           className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
         />
       </div>

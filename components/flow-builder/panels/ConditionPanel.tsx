@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useLocale } from "@/components/locale-provider";
 
 interface Condition {
   field: string;
@@ -40,6 +41,10 @@ const operatorOptions = [
 ];
 
 export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const fieldLabels: Record<string, string> = { tag: "Etiqueta", custom_field: "Campo personalizado", platform: "Plataforma", variable: "Variável", is_subscribed: "Está inscrito", last_interaction: "Última interação" };
+  const operatorLabels: Record<string, string> = { equals: "é igual a", not_equals: "não é igual a", contains: "contém", exists: "existe", gt: "maior que", lt: "menor que" };
   const data = rawData as ConditionPanelData;
   const conditions = data.conditions || [];
   const logic = data.logic || "and";
@@ -76,7 +81,7 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
       {/* Logic Toggle */}
       {conditions.length > 1 && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Match</span>
+          <span className="text-xs text-muted-foreground">{pt ? "Corresponder a" : "Match"}</span>
           <button
             type="button"
             onClick={toggleLogic}
@@ -87,9 +92,9 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
                 : "bg-blue-100 text-blue-700"
             )}
           >
-            {logic === "and" ? "ALL" : "ANY"}
+            {logic === "and" ? (pt ? "TODAS" : "ALL") : (pt ? "QUALQUER" : "ANY")}
           </button>
-          <span className="text-xs text-muted-foreground">conditions</span>
+          <span className="text-xs text-muted-foreground">{pt ? "condições" : "conditions"}</span>
         </div>
       )}
 
@@ -114,7 +119,7 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
             <div className="rounded-lg border border-border bg-card p-3">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-[11px] font-medium text-muted-foreground">
-                  Condition {index + 1}
+                  {pt ? "Condição" : "Condition"} {index + 1}
                 </span>
                 <button
                   type="button"
@@ -136,7 +141,7 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
                 >
                   {fieldOptions.map((f) => (
                     <option key={f.value} value={f.value}>
-                      {f.label}
+                      {pt ? fieldLabels[f.value] : f.label}
                     </option>
                   ))}
                 </select>
@@ -151,7 +156,7 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
                 >
                   {operatorOptions.map((o) => (
                     <option key={o.value} value={o.value}>
-                      {o.label}
+                      {pt ? operatorLabels[o.value] : o.label}
                     </option>
                   ))}
                 </select>
@@ -164,7 +169,7 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
                     onChange={(e) =>
                       updateCondition(index, { ...condition, value: e.target.value })
                     }
-                    placeholder="Value..."
+                    placeholder={pt ? "Valor..." : "Value..."}
                     className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 )}
@@ -181,12 +186,12 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
         className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-border py-3 text-sm font-medium text-muted-foreground transition-colors hover:border-amber-400 hover:text-amber-500"
       >
         <Plus className="h-4 w-4" />
-        Add Condition
+        {pt ? "Adicionar condição" : "Add Condition"}
       </button>
 
       {conditions.length === 0 && (
         <p className="text-center text-xs text-muted-foreground">
-          Add conditions to create branching logic. Contacts matching the conditions go to the &ldquo;Yes&rdquo; path, others go to &ldquo;No&rdquo;.
+          {pt ? "Adicione condições para criar ramificações. Contatos que correspondem seguem pelo caminho “Sim”; os demais, pelo caminho “Não”." : "Add conditions to create branching logic. Contacts matching the conditions go to the “Yes” path, others go to “No”."}
         </p>
       )}
     </div>
