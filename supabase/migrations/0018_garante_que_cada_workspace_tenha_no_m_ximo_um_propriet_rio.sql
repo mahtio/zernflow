@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX workspace_members_one_owner_per_workspace ON public.workspace_members (workspace_id) WHERE role = 'owner';

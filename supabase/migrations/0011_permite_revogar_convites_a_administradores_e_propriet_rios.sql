@@ -1,0 +1,1 @@
+CREATE POLICY "workspace_invites_delete" ON public.workspace_invites FOR DELETE TO authenticated USING (EXISTS (SELECT 1 FROM public.workspace_members wm WHERE wm.workspace_id = workspace_invites.workspace_id AND wm.user_id = auth.uid() AND wm.role IN ('owner', 'admin')));

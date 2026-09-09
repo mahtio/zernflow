@@ -34,8 +34,11 @@ export function WorkspaceSwitcher({
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [switching, setSwitching] = useState<string | null>(null);
+  const [createError, setCreateError] = useState<string | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const currentRole = workspaces.find((workspace) => workspace.id === current.id)?.role;
+  const canCreateWorkspace = currentRole === "owner";
 
   // Close on click outside
   useEffect(() => {
@@ -71,12 +74,15 @@ export function WorkspaceSwitcher({
     e.preventDefault();
     if (!newName.trim()) return;
     setSwitching("new");
+    setCreateError(null);
     const result = await createWorkspace(newName.trim());
     if (result.ok) {
       router.refresh();
       setOpen(false);
       setCreating(false);
       setNewName("");
+    } else {
+      setCreateError(result.error ?? (pt ? "Não foi possível criar o espaço de trabalho" : "Could not create workspace"));
     }
     setSwitching(null);
   }
@@ -153,18 +159,24 @@ export function WorkspaceSwitcher({
           {/* Divider */}
           <div className="my-1 border-t border-border" />
 
-          {/* Create workspace */}
-          {creating ? (
+          {/* Create workspace (owners only) */}
+          {canCreateWorkspace && (creating ? (
             <form onSubmit={handleCreate} className="p-1">
               <input
                 ref={inputRef}
                 type="text"
                 value={newName}
-                onChange={(e) => setNewName(e.target.value)}
+                onChange={(e) => {
+                  setNewName(e.target.value);
+                  setCreateError(null);
+                }}
                 placeholder={pt ? "Nome do espaço de trabalho" : "Workspace name"}
                 className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
                 disabled={switching === "new"}
               />
+              {createError && (
+                <p className="mt-1 text-xs text-destructive">{createError}</p>
+              )}
               <div className="mt-1.5 flex gap-1.5">
                 <button
                   type="submit"
@@ -182,6 +194,7 @@ export function WorkspaceSwitcher({
                   onClick={() => {
                     setCreating(false);
                     setNewName("");
+                    setCreateError(null);
                   }}
                   className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
                 >
@@ -197,7 +210,7 @@ export function WorkspaceSwitcher({
               <Plus className="h-3.5 w-3.5" />
               {pt ? "Criar espaço de trabalho" : "Create workspace"}
             </button>
-          )}
+          ))}
         </div>
       )}
     </div>

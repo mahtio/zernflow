@@ -1078,6 +1078,19 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      create_workspace: {
+        Args: {
+          workspace_name: string;
+        };
+        Returns: string;
+      };
+      transfer_workspace_ownership: {
+        Args: {
+          target_workspace_id: string;
+          new_owner_id: string;
+        };
+        Returns: undefined;
+      };
       increment_unread: {
         Args: {
           conv_id: string;

@@ -2,7 +2,7 @@ import { getWorkspace } from "@/lib/workspace";
 import { SettingsView } from "./settings-view";
 
 export default async function SettingsPage() {
-  const { workspace } = await getWorkspace();
+  const { workspace, role } = await getWorkspace();
 
   return (
     <SettingsView
@@ -13,6 +13,7 @@ export default async function SettingsPage() {
         hasAiKey: !!workspace.ai_api_key,
         globalKeywords: (workspace.global_keywords as string[]) ?? [],
       }}
+      role={role}
     />
   );
 }

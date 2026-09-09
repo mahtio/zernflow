@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.create_workspace(text) FROM PUBLIC;

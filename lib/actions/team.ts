@@ -14,7 +14,7 @@ export async function inviteTeamMember(
     return { error: "Workspace mismatch" };
   }
 
-  // Validate caller is owner
+  // Only owners and admins can invite members
   const { data: membership } = await supabase
     .from("workspace_members")
     .select("role")
@@ -22,8 +22,8 @@ export async function inviteTeamMember(
     .eq("user_id", user.id)
     .single();
 
-  if (membership?.role !== "owner") {
-    return { error: "Only workspace owners can invite members" };
+  if (!membership || !["owner", "admin"].includes(membership.role)) {
+    return { error: "Only workspace owners and admins can invite members" };
   }
 
   const trimmedEmail = email.trim().toLowerCase();
@@ -206,7 +206,7 @@ export async function revokeInvite(inviteId: string) {
     return { error: "Invite not found" };
   }
 
-  // Validate caller is owner
+  // Only owners and admins can revoke invites
   const { data: membership } = await supabase
     .from("workspace_members")
     .select("role")
@@ -214,8 +214,8 @@ export async function revokeInvite(inviteId: string) {
     .eq("user_id", user.id)
     .single();
 
-  if (membership?.role !== "owner") {
-    return { error: "Only workspace owners can revoke invites" };
+  if (!membership || !["owner", "admin"].includes(membership.role)) {
+    return { error: "Only workspace owners and admins can revoke invites" };
   }
 
   const { error: deleteError } = await supabase
@@ -225,6 +225,28 @@ export async function revokeInvite(inviteId: string) {
 
   if (deleteError) {
     return { error: deleteError.message };
+  }
+
+  return { ok: true };
+}
+
+export async function transferWorkspaceOwnership(
+  workspaceId: string,
+  newOwnerId: string
+) {
+  const { workspace, supabase } = await getWorkspace();
+
+  if (workspace.id !== workspaceId) {
+    return { error: "Workspace mismatch" };
+  }
+
+  const { error } = await supabase.rpc("transfer_workspace_ownership", {
+    target_workspace_id: workspaceId,
+    new_owner_id: newOwnerId,
+  });
+
+  if (error) {
+    return { error: error.message };
   }
 
   return { ok: true };

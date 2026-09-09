@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.transfer_workspace_ownership(uuid, uuid) FROM PUBLIC;

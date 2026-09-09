@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Owners can update members" ON public.workspace_members;

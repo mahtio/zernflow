@@ -20,6 +20,7 @@ import {
   inviteTeamMember,
   removeTeamMember,
   revokeInvite,
+  transferWorkspaceOwnership,
 } from "@/lib/actions/team";
 import Link from "next/link";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -78,9 +79,13 @@ export function TeamView({
     ? { owner: "Proprietário", admin: "Administrador", member: "Membro" }
     : { owner: "Owner", admin: "Admin", member: "Member" };
   const isOwner = currentUserRole === "owner";
+  const canManageInvites = isOwner || currentUserRole === "admin";
 
   const [members, setMembers] = useState(initialMembers);
   const [invites, setInvites] = useState(initialInvites);
+  const [transferTarget, setTransferTarget] = useState<MemberDetail | null>(null);
+  const [transferring, setTransferring] = useState(false);
+  const [transferError, setTransferError] = useState<string | null>(null);
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState("");
@@ -128,6 +133,24 @@ export function TeamView({
     }
 
     setRemovingId(null);
+  }
+
+  async function handleTransferOwnership() {
+    if (!transferTarget) return;
+
+    setTransferring(true);
+    setTransferError(null);
+    const result = await transferWorkspaceOwnership(workspaceId, transferTarget.userId);
+
+    if (result.error) {
+      setTransferError(result.error);
+      setTransferring(false);
+      return;
+    }
+
+    setTransferring(false);
+    setTransferTarget(null);
+    router.refresh();
   }
 
   async function handleRevoke(inviteId: string) {
@@ -221,20 +244,32 @@ export function TeamView({
                     </span>
 
                     {isOwner && member.userId !== currentUserId && (
-                      <button
-                        onClick={() =>
-                          setConfirmRemove({ userId: member.userId, name: member.name })
-                        }
-                        disabled={removingId === member.userId}
-                        className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                        title={pt ? "Remover membro" : "Remove member"}
-                      >
-                        {removingId === member.userId ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Trash2 className="h-3.5 w-3.5" />
-                        )}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => {
+                            setTransferError(null);
+                            setTransferTarget(member);
+                          }}
+                          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-amber-500/10 hover:text-amber-600"
+                          title={pt ? "Transferir propriedade" : "Transfer ownership"}
+                        >
+                          <Crown className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() =>
+                            setConfirmRemove({ userId: member.userId, name: member.name })
+                          }
+                          disabled={removingId === member.userId}
+                          className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
+                          title={pt ? "Remover membro" : "Remove member"}
+                        >
+                          {removingId === member.userId ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      </>
                     )}
                   </div>
                 </div>
@@ -242,8 +277,8 @@ export function TeamView({
             </div>
           </section>
 
-          {/* Invite section (owners only) */}
-          {isOwner && (
+          {/* Invite section (owners and admins only) */}
+          {canManageInvites && (
             <>
               <hr className="border-border" />
 
@@ -364,7 +399,7 @@ export function TeamView({
                           </div>
                         </div>
 
-                        {isOwner && (
+                        {canManageInvites && (
                           <button
                             onClick={() => setConfirmRevoke(invite.id)}
                             disabled={revokingId === invite.id}
@@ -387,6 +422,22 @@ export function TeamView({
           )}
         </div>
       </div>
+      {transferError && (
+        <div className="fixed bottom-4 right-4 z-50 rounded-lg border border-destructive/30 bg-card px-4 py-3 text-sm text-destructive shadow-lg">
+          {transferError}
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!transferTarget}
+        title={pt ? "Transferir propriedade" : "Transfer ownership"}
+        message={pt ? `Transferir a propriedade para ${transferTarget?.name ?? "este membro"}? Você passará a ser administrador e somente o novo proprietário poderá reverter esta alteração.` : `Transfer ownership to ${transferTarget?.name ?? "this member"}? You will become an admin and only the new owner can reverse this change.`}
+        confirmLabel={transferring ? (pt ? "Transferindo..." : "Transferring...") : (pt ? "Transferir" : "Transfer")}
+        cancelLabel={pt ? "Cancelar" : "Cancel"}
+        onConfirm={handleTransferOwnership}
+        onCancel={() => {
+          if (!transferring) setTransferTarget(null);
+        }}
+      />
       <ConfirmDialog
         open={!!confirmRemove}
         title={pt ? "Remover membro" : "Remove member"}

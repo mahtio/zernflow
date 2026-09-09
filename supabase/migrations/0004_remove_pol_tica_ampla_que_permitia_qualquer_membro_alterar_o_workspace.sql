@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Users can update their workspaces" ON public.workspaces;

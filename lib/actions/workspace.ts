@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { WORKSPACE_COOKIE } from "@/lib/workspace";
 
 export async function switchWorkspace(workspaceId: string) {
@@ -45,31 +45,16 @@ export async function createWorkspace(name: string) {
   const trimmed = name.trim();
   if (!trimmed) return { error: "Name is required" };
 
-  const slug = trimmed
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
+  const { data: workspaceId, error } = await supabase.rpc("create_workspace", {
+    workspace_name: trimmed,
+  });
 
-  const { data: workspace, error } = await supabase
-    .from("workspaces")
-    .insert({ name: trimmed, slug })
-    .select("id")
-    .single();
-
-  if (error || !workspace) {
+  if (error || !workspaceId) {
     return { error: error?.message || "Failed to create workspace" };
   }
 
-  // Add user as owner
-  await supabase.from("workspace_members").insert({
-    workspace_id: workspace.id,
-    user_id: user.id,
-    role: "owner",
-  });
-
-  // Switch to new workspace
   const cookieStore = await cookies();
-  cookieStore.set(WORKSPACE_COOKIE, workspace.id, {
+  cookieStore.set(WORKSPACE_COOKIE, workspaceId, {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -77,5 +62,61 @@ export async function createWorkspace(name: string) {
     maxAge: 60 * 60 * 24 * 365,
   });
 
-  return { ok: true, workspaceId: workspace.id };
+  return { ok: true, workspaceId };
+}
+
+export async function updateWorkspaceSettings(
+  workspaceId: string,
+  settings: {
+    name: string;
+    globalKeywords: string[];
+    apiKey?: string;
+    aiKey?: string;
+  }
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { error: "Not authenticated" };
+
+  const { data: membership } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!membership) {
+    return { error: "No access to this workspace" };
+  }
+
+  const name = settings.name.trim();
+  if (!name || name.length > 100) {
+    return { error: "Workspace name must be between 1 and 100 characters" };
+  }
+
+  const update: Record<string, unknown> = {
+    global_keywords: settings.globalKeywords,
+  };
+
+  if (membership.role === "owner") {
+    update.name = name;
+  }
+  if (settings.apiKey?.trim()) {
+    update.late_api_key_encrypted = settings.apiKey.trim();
+  }
+  if (settings.aiKey?.trim()) {
+    update.ai_api_key = settings.aiKey.trim();
+  }
+
+  const serviceClient = await createServiceClient();
+  const { error } = await serviceClient
+    .from("workspaces")
+    .update(update)
+    .eq("id", workspaceId);
+
+  if (error) return { error: error.message };
+  return { ok: true };
 }

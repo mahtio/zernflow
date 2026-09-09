@@ -1,0 +1,1 @@
+CREATE POLICY "workspace_invites_insert" ON public.workspace_invites FOR INSERT TO authenticated WITH CHECK (invited_by = auth.uid() AND role IN ('member', 'admin') AND EXISTS (SELECT 1 FROM public.workspace_members wm WHERE wm.workspace_id = workspace_invites.workspace_id AND wm.user_id = auth.uid() AND wm.role IN ('owner', 'admin')));

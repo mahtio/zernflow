@@ -1,0 +1,1 @@
+ALTER TABLE public.workspace_invites ADD CONSTRAINT workspace_invites_role_check CHECK (role IN ('admin', 'member'));

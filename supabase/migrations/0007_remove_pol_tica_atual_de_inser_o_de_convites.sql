@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "workspace_invites_insert" ON public.workspace_invites;

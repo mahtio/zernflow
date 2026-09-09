@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Owners can insert invites" ON public.workspace_invites;

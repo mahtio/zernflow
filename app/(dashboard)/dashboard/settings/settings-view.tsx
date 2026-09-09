@@ -19,7 +19,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import { updateWorkspaceSettings } from "@/lib/actions/workspace";
 import { useLocale } from "@/components/locale-provider";
 
 interface WorkspaceSettings {
@@ -38,11 +38,14 @@ interface TestResult {
 
 export function SettingsView({
   workspace,
+  role,
 }: {
   workspace: WorkspaceSettings;
+  role: string;
 }) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
+  const isOwner = role === "owner";
   const [name, setName] = useState(workspace.name);
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
@@ -120,31 +123,15 @@ export function SettingsView({
     setSaved(false);
 
     try {
-      const supabase = createClient();
+      const result = await updateWorkspaceSettings(workspace.id, {
+        name,
+        globalKeywords: keywords,
+        apiKey,
+        aiKey,
+      });
 
-      const update: Record<string, unknown> = {
-        name: name.trim(),
-        global_keywords: keywords,
-      };
-
-      // Only update keys if user entered new ones
-      if (apiKey.trim()) {
-        update.late_api_key_encrypted = apiKey.trim();
-      }
-      if (aiKey.trim()) {
-        update.ai_api_key = aiKey.trim();
-      }
-
-      const { error: updateError } = await supabase
-        .from("workspaces")
-        .update(update)
-        .eq("id", workspace.id)
-        .select("id")
-        .single();
-
-      if (updateError) {
-        console.error("Settings save error:", updateError);
-        throw new Error(updateError.message);
+      if (result.error) {
+        throw new Error(result.error);
       }
 
       setSaved(true);
@@ -187,8 +174,14 @@ export function SettingsView({
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1.5 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                disabled={!isOwner}
+                className="mt-1.5 w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
               />
+              {!isOwner && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {pt ? "Somente o proprietário pode alterar o nome do espaço de trabalho." : "Only the owner can change the workspace name."}
+                </p>
+              )}
             </div>
           </section>
 
