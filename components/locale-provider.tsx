@@ -39,6 +39,8 @@ type Messages = {
   segment: string;
   columns: string;
   visibleColumns: string;
+  customFields: string;
+  customField: string;
   exportCsv: string;
   all: string;
   noContactsFound: string;
@@ -101,6 +103,8 @@ const messages: Record<Locale, Messages> = {
     segment: "Segment",
     columns: "Columns",
     visibleColumns: "Visible columns",
+    customFields: "Custom fields",
+    customField: "Custom field",
     exportCsv: "Export CSV",
     all: "All",
     noContactsFound: "No contacts found",
@@ -161,6 +165,8 @@ const messages: Record<Locale, Messages> = {
     segment: "Segmento",
     columns: "Colunas",
     visibleColumns: "Colunas visíveis",
+    customFields: "Campos personalizados",
+    customField: "Campo personalizado",
     exportCsv: "Exportar CSV",
     all: "Todos",
     noContactsFound: "Nenhum contato encontrado",

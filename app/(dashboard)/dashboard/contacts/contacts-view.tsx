@@ -24,16 +24,28 @@ import { useLocale } from "@/components/locale-provider";
 import type { Database } from "@/lib/types/database";
 
 type Tag = Database["public"]["Tables"]["tags"]["Row"];
+type CustomFieldDefinition =
+  Database["public"]["Tables"]["custom_field_definitions"]["Row"];
 type ContactWithTags = Database["public"]["Tables"]["contacts"]["Row"] & {
   contact_tags: {
     tag_id: string;
     tags: Tag | null;
   }[];
+  contact_custom_fields: {
+    field_id: string;
+    value: string;
+  }[];
 };
 
-type ColumnId = "name" | "email" | "lastInteraction" | "tags" | "subscribed";
+type FixedColumnId =
+  | "name"
+  | "email"
+  | "lastInteraction"
+  | "tags"
+  | "subscribed";
+type ColumnId = FixedColumnId | `custom:${string}`;
 
-const ALL_COLUMNS: ColumnId[] = [
+const FIXED_COLUMNS: FixedColumnId[] = [
   "name",
   "email",
   "lastInteraction",
@@ -44,6 +56,10 @@ const COLUMN_STORAGE_KEY = "contacts-visible-columns";
 
 function escapeCsv(value: string): string {
   return `"${value.replaceAll('"', '""')}"`;
+}
+
+function isCustomColumn(column: ColumnId): column is `custom:${string}` {
+  return column.startsWith("custom:");
 }
 
 function formatDate(
@@ -66,20 +82,26 @@ function formatDate(
 export function ContactsView({
   contacts,
   tags,
+  customFieldDefinitions,
   workspaceId,
 }: {
   contacts: ContactWithTags[];
   tags: Tag[];
+  customFieldDefinitions: CustomFieldDefinition[];
   workspaceId: string;
 }) {
   const { locale, t } = useLocale();
+  const allColumns: ColumnId[] = [
+    ...FIXED_COLUMNS,
+    ...customFieldDefinitions.map((field) => `custom:${field.id}` as const),
+  ];
   const [search, setSearch] = useState("");
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [showSegmentBuilder, setShowSegmentBuilder] = useState(false);
   const [segmentFilter, setSegmentFilter] = useState<SegmentFilter>(
     createEmptyFilter()
   );
-  const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>(ALL_COLUMNS);
+  const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>(FIXED_COLUMNS);
 
   useEffect(() => {
     const savedColumns = localStorage.getItem(COLUMN_STORAGE_KEY);
@@ -87,12 +109,20 @@ export function ContactsView({
 
     try {
       const parsed = JSON.parse(savedColumns) as string[];
-      const validColumns = ALL_COLUMNS.filter((column) => parsed.includes(column));
+      const availableColumns: ColumnId[] = [
+        ...FIXED_COLUMNS,
+        ...customFieldDefinitions.map(
+          (field) => `custom:${field.id}` as const
+        ),
+      ];
+      const validColumns = availableColumns.filter((column) =>
+        parsed.includes(column)
+      );
       if (validColumns.length > 0) setVisibleColumns(validColumns);
     } catch {
       localStorage.removeItem(COLUMN_STORAGE_KEY);
     }
-  }, []);
+  }, [customFieldDefinitions]);
 
   const filtered = contacts.filter((contact) => {
     // Search filter
@@ -112,7 +142,7 @@ export function ContactsView({
     return true;
   });
 
-  const columnLabels: Record<ColumnId, string> = {
+  const fixedColumnLabels: Record<FixedColumnId, string> = {
     name: t.tableName,
     email: t.tableEmail,
     lastInteraction: t.lastInteraction,
@@ -120,10 +150,31 @@ export function ContactsView({
     subscribed: t.subscribed,
   };
 
+  function getColumnLabel(column: ColumnId): string {
+    if (!isCustomColumn(column)) return fixedColumnLabels[column];
+    const fieldId = column.slice("custom:".length);
+    return (
+      customFieldDefinitions.find((field) => field.id === fieldId)?.name ??
+      t.customField
+    );
+  }
+
+  function getCustomFieldValue(
+    contact: ContactWithTags,
+    column: ColumnId
+  ): string {
+    if (!isCustomColumn(column)) return "";
+    const fieldId = column.slice("custom:".length);
+    return (
+      contact.contact_custom_fields.find((field) => field.field_id === fieldId)
+        ?.value ?? ""
+    );
+  }
+
   function toggleColumn(column: ColumnId) {
     const nextColumns = visibleColumns.includes(column)
       ? visibleColumns.filter((item) => item !== column)
-      : ALL_COLUMNS.filter(
+      : allColumns.filter(
           (item) => item === column || visibleColumns.includes(item)
         );
 
@@ -133,13 +184,13 @@ export function ContactsView({
   }
 
   function exportCsv() {
-    const headers = visibleColumns.map((column) => columnLabels[column]);
+    const headers = visibleColumns.map(getColumnLabel);
     const rows = filtered.map((contact) => {
       const contactTags = contact.contact_tags
         .map((contactTag) => contactTag.tags?.name)
         .filter(Boolean)
         .join(", ");
-      const values: Record<ColumnId, string> = {
+      const fixedValues: Record<FixedColumnId, string> = {
         name: contact.display_name ?? "",
         email: contact.email ?? "",
         lastInteraction: contact.last_interaction_at
@@ -148,7 +199,11 @@ export function ContactsView({
         tags: contactTags,
         subscribed: contact.is_subscribed ? t.yes : t.no,
       };
-      return visibleColumns.map((column) => values[column]);
+      return visibleColumns.map((column) =>
+        isCustomColumn(column)
+          ? getCustomFieldValue(contact, column)
+          : fixedValues[column]
+      );
     });
     const csv = [headers, ...rows]
       .map((row) => row.map(escapeCsv).join(","))
@@ -215,23 +270,27 @@ export function ContactsView({
               <p className="px-2 pb-2 pt-1 text-xs font-medium text-muted-foreground">
                 {t.visibleColumns}
               </p>
-              {ALL_COLUMNS.map((column) => (
-                <label
-                  key={column}
-                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                >
-                  <input
-                    type="checkbox"
-                    checked={visibleColumns.includes(column)}
-                    onChange={() => toggleColumn(column)}
-                    disabled={
-                      visibleColumns.length === 1 &&
-                      visibleColumns.includes(column)
-                    }
-                    className="h-4 w-4 rounded border-input accent-primary"
-                  />
-                  {columnLabels[column]}
-                </label>
+              {allColumns.map((column, index) => (
+                <div key={column}>
+                  {index === FIXED_COLUMNS.length && (
+                    <p className="mt-2 border-t border-border px-2 pb-1 pt-3 text-xs font-medium text-muted-foreground">
+                      {t.customFields}
+                    </p>
+                  )}
+                  <label className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent">
+                    <input
+                      type="checkbox"
+                      checked={visibleColumns.includes(column)}
+                      onChange={() => toggleColumn(column)}
+                      disabled={
+                        visibleColumns.length === 1 &&
+                        visibleColumns.includes(column)
+                      }
+                      className="h-4 w-4 rounded border-input accent-primary"
+                    />
+                    {getColumnLabel(column)}
+                  </label>
+                </div>
               ))}
             </div>
           </details>
@@ -322,7 +381,7 @@ export function ContactsView({
                       index === 0 ? "px-8" : "px-4"
                     )}
                   >
-                    {columnLabels[column]}
+                    {getColumnLabel(column)}
                   </th>
                 ))}
               </tr>
@@ -455,6 +514,19 @@ export function ContactsView({
                         )}
                       </td>
                     )}
+                    {visibleColumns
+                      .filter((column) => column.startsWith("custom:"))
+                      .map((column) => (
+                        <td
+                          key={column}
+                          className={cn(
+                            "py-3 text-sm text-muted-foreground",
+                            visibleColumns[0] === column ? "px-8" : "px-4"
+                          )}
+                        >
+                          {getCustomFieldValue(contact, column) || "—"}
+                        </td>
+                      ))}
                   </tr>
                 );
               })}
