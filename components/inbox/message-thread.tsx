@@ -211,6 +211,10 @@ function shouldShowDateSeparator(
   return currentDate !== previousDate;
 }
 
+function hasRenderableContent(message: Message): boolean {
+  return Boolean(message.text?.trim()) || getAttachments(message.attachments).length > 0;
+}
+
 function MessageBubble({ message, locale, pt }: { message: Message; locale: string; pt: boolean }) {
   const isInbound = message.direction === "inbound";
   const isBot = message.sent_by_flow_id !== null;
@@ -537,9 +541,9 @@ export function MessageThread({
       {/* Messages */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto p-4">
         <div className="mx-auto max-w-2xl space-y-4">
-          {messages.map((message, i) => (
+          {messages.filter(hasRenderableContent).map((message, i, visibleMessages) => (
             <div key={message.id}>
-              {shouldShowDateSeparator(message, messages[i - 1]) && (
+              {shouldShowDateSeparator(message, visibleMessages[i - 1]) && (
                 <div className="my-4 flex items-center gap-3">
                   <div className="h-px flex-1 bg-border" />
                   <span className="text-[11px] text-muted-foreground">

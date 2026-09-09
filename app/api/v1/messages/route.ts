@@ -11,31 +11,37 @@ interface ZernioAttachment {
   previewUrl?: string | null;
 }
 
-function attachmentUrl(url: string | undefined, conversationId: string): string | null {
-  if (!url) return null;
-
-  try {
-    const parsed = new URL(url);
-    const mediaMatch = parsed.pathname.match(/\/v1\/whatsapp\/media\/([^/]+)$/);
-    if (parsed.hostname === "zernio.com" && mediaMatch) {
-      return `/api/v1/messages/media?conversationId=${encodeURIComponent(conversationId)}&mediaId=${encodeURIComponent(mediaMatch[1])}`;
-    }
-    return parsed.protocol === "https:" || parsed.protocol === "http:" ? url : null;
-  } catch {
-    return null;
-  }
+function attachmentUrl(
+  conversationId: string,
+  messageId: string,
+  attachmentIndex: number,
+  preview = false
+): string {
+  const params = new URLSearchParams({
+    conversationId,
+    messageId,
+    attachmentIndex: String(attachmentIndex),
+  });
+  if (preview) params.set("preview", "true");
+  return `/api/v1/messages/media?${params.toString()}`;
 }
 
-function mapAttachment(attachment: ZernioAttachment, conversationId: string) {
-  const url = attachmentUrl(attachment.url, conversationId);
-  if (!url) return null;
+function mapAttachment(
+  attachment: ZernioAttachment,
+  conversationId: string,
+  messageId: string,
+  attachmentIndex: number
+) {
+  if (!attachment.url && !attachment.previewUrl) return null;
 
   return {
     id: attachment.id ?? null,
     type: attachment.type ?? "file",
-    url,
+    url: attachmentUrl(conversationId, messageId, attachmentIndex),
     filename: attachment.filename ?? null,
-    previewUrl: attachmentUrl(attachment.previewUrl ?? undefined, conversationId),
+    previewUrl: attachment.previewUrl
+      ? attachmentUrl(conversationId, messageId, attachmentIndex, true)
+      : null,
   };
 }
 
@@ -102,9 +108,11 @@ export async function GET(request: NextRequest) {
       conversation_id: conversationId,
       direction: m.direction === "outbound" ? "outbound" : "inbound",
       text: m.text ?? m.message ?? null,
-      attachments: m.attachments?.length
+      attachments: m.attachments?.length && m.id
         ? m.attachments
-            .map((attachment: ZernioAttachment) => mapAttachment(attachment, conversationId))
+            .map((attachment: ZernioAttachment, index: number) =>
+              mapAttachment(attachment, conversationId, m.id, index)
+            )
             .filter(Boolean)
         : null,
       quick_reply_payload: null,
