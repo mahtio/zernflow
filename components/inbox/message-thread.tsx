@@ -6,6 +6,7 @@ import { Send, Paperclip, Bot, User, MessageSquare, CheckCircle, Clock, RotateCc
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useLocale } from "@/components/locale-provider";
 import type { Database, ConversationStatus } from "@/lib/types/database";
 
@@ -13,6 +14,54 @@ type Message = Database["public"]["Tables"]["messages"]["Row"];
 type Conversation = Database["public"]["Tables"]["conversations"]["Row"] & {
   contacts: Database["public"]["Tables"]["contacts"]["Row"] | null;
 };
+
+const LINK_PATTERN = /(https?:\/\/[^\s]+|www\.[^\s]+)/gi;
+
+function MessageText({ text, pt }: { text: string; pt: boolean }) {
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const parts = text.split(LINK_PATTERN);
+
+  function confirmOpenLink() {
+    if (!pendingUrl) return;
+    const url = pendingUrl.startsWith("www.") ? `https://${pendingUrl}` : pendingUrl;
+    window.open(url, "_blank", "noopener,noreferrer");
+    setPendingUrl(null);
+  }
+
+  return (
+    <>
+      <p className="whitespace-pre-wrap">
+        {parts.map((part, index) =>
+          /^(https?:\/\/|www\.)/i.test(part) ? (
+            <button
+              key={`${part}-${index}`}
+              type="button"
+              onClick={() => setPendingUrl(part)}
+              className="break-all text-left underline underline-offset-2 hover:opacity-80"
+            >
+              {part}
+            </button>
+          ) : (
+            part
+          )
+        )}
+      </p>
+      <ConfirmDialog
+        open={pendingUrl !== null}
+        title={pt ? "Abrir link externo?" : "Open external link?"}
+        message={
+          pt
+            ? `Este link levará você para um site externo: ${pendingUrl ?? ""}. Deseja continuar?`
+            : `This link will take you to an external website: ${pendingUrl ?? ""}. Do you want to continue?`
+        }
+        confirmLabel={pt ? "Abrir link" : "Open link"}
+        cancelLabel={pt ? "Cancelar" : "Cancel"}
+        onConfirm={confirmOpenLink}
+        onCancel={() => setPendingUrl(null)}
+      />
+    </>
+  );
+}
 
 function formatMessageTime(dateStr: string, locale: string): string {
   const date = new Date(dateStr);
@@ -70,7 +119,7 @@ function MessageBubble({ message, locale, pt }: { message: Message; locale: stri
               : "rounded-tr-md bg-primary text-primary-foreground"
           )}
         >
-          {message.text && <p className="whitespace-pre-wrap">{message.text}</p>}
+          {message.text && <MessageText text={message.text} pt={pt} />}
           {message.attachments && (
             <div className="mt-1">
               <Paperclip className="inline h-3 w-3" />
