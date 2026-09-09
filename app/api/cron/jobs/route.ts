@@ -382,6 +382,7 @@ async function processJob(
         lateConversationId?: string | null;
         lateAccountId?: string | null;
         variables?: Record<string, string> | null;
+        waitUntil?: string;
       };
 
       // Check if session is still active
@@ -402,6 +403,13 @@ async function processJob(
             `flow session ${payload.sessionId} could not be loaded: ${sessionError.message}`
           );
         }
+        return;
+      }
+
+      // A Smart Delay can be resumed by a user response before its timeout.
+      // The timestamp identifies the exact wait instance, so an old timeout
+      // cannot resume a later wait that happens to use the same node again.
+      if (payload.waitUntil && session.waiting_until !== payload.waitUntil) {
         return;
       }
 

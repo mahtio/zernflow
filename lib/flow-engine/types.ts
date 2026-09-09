@@ -81,6 +81,7 @@ export interface ConditionNodeData {
 export interface DelayNodeData {
   duration: number;
   unit: "seconds" | "minutes" | "hours" | "days";
+  waitUntil?: string;
 }
 
 export interface TagNodeData {

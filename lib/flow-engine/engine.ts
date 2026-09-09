@@ -7,6 +7,7 @@ import type {
   SendMessageNodeData,
   ConditionNodeData,
   DelayNodeData,
+  SmartDelayNodeData,
   TagNodeData,
   SetFieldNodeData,
   HttpRequestNodeData,
@@ -369,12 +370,13 @@ async function executeNode(
     case "abSplit":
       return executeABSplit(node.data as ABSplitNodeData);
     case "smartDelay":
-      // Wait for next input
-      await supabase
-        .from("flow_sessions")
-        .update({ waiting_for_input: true, current_node_id: node.id })
-        .eq("id", sessionId);
-      return "pause";
+      return executeSmartDelay(
+        supabase,
+        node.data as SmartDelayNodeData,
+        sessionId,
+        node.id,
+        context
+      );
     case "enrollSequence":
       return executeEnrollSequence(supabase, node.data as EnrollSequenceNodeData, context);
     default:
@@ -660,6 +662,66 @@ function evaluateCondition(
   }
 }
 
+const delayMultipliers: Record<DelayNodeData["unit"], number> = {
+  seconds: 1000,
+  minutes: 60 * 1000,
+  hours: 60 * 60 * 1000,
+  days: 24 * 60 * 60 * 1000,
+};
+
+async function scheduleFlowResume(
+  supabase: SupabaseClient<Database>,
+  sessionId: string,
+  nodeId: string,
+  runAt: string,
+  waitingForInput: boolean,
+  context: FlowExecutionContext
+) {
+  const { data: job, error: jobError } = await supabase
+    .from("scheduled_jobs")
+    .insert({
+      type: "resume_flow",
+      payload: {
+        sessionId,
+        nodeId,
+        flowId: context.flowId,
+        channelId: context.channelId,
+        contactId: context.contactId,
+        conversationId: context.conversationId,
+        workspaceId: context.workspaceId,
+        lateConversationId: context.lateConversationId || null,
+        lateAccountId: context.lateAccountId || null,
+        variables: context.variables || {},
+        waitUntil: runAt,
+      },
+      run_at: runAt,
+    })
+    .select("id")
+    .single();
+
+  if (jobError || !job) {
+    throw new Error(
+      `Could not schedule flow session ${sessionId}: ${jobError?.message || "job was not created"}`
+    );
+  }
+
+  const { error: sessionError } = await supabase
+    .from("flow_sessions")
+    .update({
+      waiting_for_input: waitingForInput,
+      waiting_until: runAt,
+      current_node_id: nodeId,
+    })
+    .eq("id", sessionId);
+
+  if (sessionError) {
+    await supabase.from("scheduled_jobs").delete().eq("id", job.id);
+    throw new Error(
+      `Could not pause flow session ${sessionId}: ${sessionError.message}`
+    );
+  }
+}
+
 async function executeDelay(
   supabase: SupabaseClient<Database>,
   data: DelayNodeData,
@@ -667,43 +729,31 @@ async function executeDelay(
   nodeId: string,
   context: FlowExecutionContext
 ) {
-  const multipliers: Record<string, number> = {
-    seconds: 1000,
-    minutes: 60 * 1000,
-    hours: 60 * 60 * 1000,
-    days: 24 * 60 * 60 * 1000,
-  };
+  const configuredTime = data.waitUntil ? Date.parse(data.waitUntil) : NaN;
+  const duration = Number.isFinite(data.duration) ? Math.max(0, data.duration) : 0;
+  const delayMs = duration * (delayMultipliers[data.unit] || 1000);
+  const runAt = new Date(
+    Number.isFinite(configuredTime) ? configuredTime : Date.now() + delayMs
+  ).toISOString();
 
-  const delayMs = data.duration * (multipliers[data.unit] || 1000);
-  const runAt = new Date(Date.now() + delayMs).toISOString();
+  await scheduleFlowResume(supabase, sessionId, nodeId, runAt, false, context);
+  return "pause";
+}
 
-  // Schedule a job to resume the flow
-  await supabase.from("scheduled_jobs").insert({
-    type: "resume_flow",
-    payload: {
-      sessionId,
-      nodeId,
-      flowId: context.flowId,
-      channelId: context.channelId,
-      contactId: context.contactId,
-      conversationId: context.conversationId,
-      workspaceId: context.workspaceId,
-      lateConversationId: context.lateConversationId || null,
-      lateAccountId: context.lateAccountId || null,
-      variables: context.variables || {},
-    },
-    run_at: runAt,
-  });
+async function executeSmartDelay(
+  supabase: SupabaseClient<Database>,
+  data: SmartDelayNodeData,
+  sessionId: string,
+  nodeId: string,
+  context: FlowExecutionContext
+) {
+  const timeout = Number.isFinite(data.timeout) ? Math.max(1, data.timeout) : 30;
+  const unit = data.timeoutUnit || "minutes";
+  const runAt = new Date(
+    Date.now() + timeout * delayMultipliers[unit]
+  ).toISOString();
 
-  // Update session to waiting
-  await supabase
-    .from("flow_sessions")
-    .update({
-      waiting_until: runAt,
-      current_node_id: nodeId,
-    })
-    .eq("id", sessionId);
-
+  await scheduleFlowResume(supabase, sessionId, nodeId, runAt, true, context);
   return "pause";
 }
 

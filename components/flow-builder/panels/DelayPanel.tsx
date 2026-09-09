@@ -34,6 +34,14 @@ const presets: Array<{ label: string; duration: number; unit: DelayUnit }> = [
   { label: "7 days", duration: 7, unit: "days" },
 ];
 
+function toLocalDateTimeInput(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const localTime = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localTime.toISOString().slice(0, 16);
+}
+
 export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
   const data = rawData as DelayPanelData;
   const duration = data.duration || 0;
@@ -163,8 +171,15 @@ export function DelayPanel({ data: rawData, onChange }: DelayPanelProps) {
           </label>
           <input
             type="datetime-local"
-            value={data.waitUntil || ""}
-            onChange={(e) => onChange({ ...data, waitUntil: e.target.value })}
+            value={toLocalDateTimeInput(data.waitUntil)}
+            onChange={(e) =>
+              onChange({
+                ...data,
+                waitUntil: e.target.value
+                  ? new Date(e.target.value).toISOString()
+                  : "",
+              })
+            }
             className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
           />
           <p className="mt-1.5 text-xs text-muted-foreground">
