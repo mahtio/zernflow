@@ -129,16 +129,26 @@ function AttachmentList({ attachments, pt }: { attachments: Attachment[]; pt: bo
 
           if (attachment.type === "video") {
             return (
-              <video
-                key={key}
-                src={attachment.url}
-                poster={attachment.previewUrl ?? undefined}
-                controls
-                preload="metadata"
-                className="max-h-80 max-w-full rounded-lg"
-              >
-                {pt ? "Seu navegador não suporta vídeo." : "Your browser does not support video."}
-              </video>
+              <div key={key} className="space-y-1.5">
+                <video
+                  poster={attachment.previewUrl ?? undefined}
+                  controls
+                  preload="metadata"
+                  playsInline
+                  className="max-h-80 max-w-full rounded-lg"
+                >
+                  <source src={attachment.url} />
+                  {pt ? "Seu navegador não suporta vídeo." : "Your browser does not support video."}
+                </video>
+                <button
+                  type="button"
+                  onClick={() => setPendingAttachment(attachment)}
+                  className="flex items-center gap-1 text-xs underline underline-offset-2 hover:opacity-80"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  {pt ? "Abrir vídeo em nova aba" : "Open video in a new tab"}
+                </button>
+              </div>
             );
           }
 

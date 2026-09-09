@@ -85,13 +85,11 @@ export async function GET(request: NextRequest) {
     if (isProtectedZernioMedia) {
       upstreamHeaders.Authorization = `Bearer ${workspace.late_api_key_encrypted}`;
     }
-    const range = request.headers.get("range");
-    if (range) upstreamHeaders.Range = range;
 
     const mediaResponse = await fetch(parsedUrl, {
       headers: upstreamHeaders,
       cache: "no-store",
-      redirect: "error",
+      redirect: "follow",
     });
 
     if (!mediaResponse.ok || !mediaResponse.body) {
@@ -102,25 +100,21 @@ export async function GET(request: NextRequest) {
     }
 
     const upstreamContentType = mediaResponse.headers.get("content-type");
-    const contentType = upstreamContentType && upstreamContentType !== "application/octet-stream"
+    const contentType = upstreamContentType
+      && upstreamContentType !== "application/octet-stream"
+      && !upstreamContentType.startsWith("application/json")
       ? upstreamContentType
       : fallbackContentTypes[attachment.type ?? "file"] ?? fallbackContentTypes.file;
 
     const headers = new Headers();
     headers.set("Content-Type", contentType);
     headers.set("Cache-Control", "private, max-age=300");
-    headers.set("Accept-Ranges", mediaResponse.headers.get("accept-ranges") ?? "bytes");
     const contentLength = mediaResponse.headers.get("content-length");
     if (contentLength) headers.set("Content-Length", contentLength);
-    const contentRange = mediaResponse.headers.get("content-range");
-    if (contentRange) headers.set("Content-Range", contentRange);
     const disposition = mediaResponse.headers.get("content-disposition");
     if (disposition) headers.set("Content-Disposition", disposition);
 
-    return new NextResponse(mediaResponse.body, {
-      status: mediaResponse.status,
-      headers,
-    });
+    return new NextResponse(mediaResponse.body, { headers });
   } catch (error) {
     console.error("Failed to fetch Zernio media:", error);
     return NextResponse.json({ error: "Failed to fetch attachment" }, { status: 502 });
