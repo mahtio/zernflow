@@ -303,7 +303,7 @@ export function SettingsView({
               <h2 className="text-sm font-semibold">AI Gateway</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Required for the AI Response flow node. Uses{" "}
+              {pt ? "Necessário para o nó de resposta com IA. Usa o " : "Required for the AI Response flow node. Uses "}
               <a
                 href="https://vercel.com/ai-gateway"
                 target="_blank"
@@ -313,8 +313,8 @@ export function SettingsView({
                 Vercel AI Gateway
                 <ExternalLink className="h-3 w-3" />
               </a>{" "}
-              to access OpenAI, Anthropic, and Google models with a single key.
-              {workspace.hasAiKey && " A key is currently configured."}
+              {pt ? "para acessar modelos da OpenAI, Anthropic e Google com uma única chave." : "to access OpenAI, Anthropic, and Google models with a single key."}
+              {workspace.hasAiKey && (pt ? " Uma chave está configurada no momento." : " A key is currently configured.")}
             </p>
 
             <div className="mt-4 relative">
@@ -345,7 +345,7 @@ export function SettingsView({
             {workspace.hasAiKey && (
               <p className="mt-1.5 flex items-center gap-1 text-xs text-green-600">
                 <Check className="h-3 w-3" />
-                AI Gateway key configured
+                {pt ? "Chave do AI Gateway configurada" : "AI Gateway key configured"}
               </p>
             )}
           </section>
@@ -356,10 +356,10 @@ export function SettingsView({
           <section>
             <div className="flex items-center gap-2">
               <Hash className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">Global Keywords</h2>
+              <h2 className="text-sm font-semibold">{pt ? "Palavras-chave globais" : "Global Keywords"}</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Keywords that trigger flows across all channels. Flow-specific triggers take priority over global keywords.
+              {pt ? "Palavras-chave que acionam fluxos em todos os canais. Gatilhos específicos de um fluxo têm prioridade." : "Keywords that trigger flows across all channels. Flow-specific triggers take priority over global keywords."}
             </p>
 
             {/* Keyword input */}
@@ -374,7 +374,7 @@ export function SettingsView({
                     addKeyword();
                   }
                 }}
-                placeholder="Add a keyword..."
+                placeholder={pt ? "Adicionar palavra-chave..." : "Add a keyword..."}
                 className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
               />
               <button
@@ -406,7 +406,7 @@ export function SettingsView({
               </div>
             ) : (
               <p className="mt-3 text-xs text-muted-foreground/70">
-                No global keywords configured
+                {pt ? "Nenhuma palavra-chave global configurada" : "No global keywords configured"}
               </p>
             )}
           </section>
@@ -417,17 +417,17 @@ export function SettingsView({
           <section>
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
-              <h2 className="text-sm font-semibold">Team</h2>
+              <h2 className="text-sm font-semibold">{pt ? "Equipe" : "Team"}</h2>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Manage workspace members and invitations.
+              {pt ? "Gerencie membros e convites do espaço de trabalho." : "Manage workspace members and invitations."}
             </p>
             <Link
               href="/dashboard/settings/team"
               className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
             >
               <Users className="h-4 w-4" />
-              Manage Team
+              {pt ? "Gerenciar equipe" : "Manage Team"}
               <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
             </Link>
           </section>
@@ -444,12 +444,12 @@ export function SettingsView({
               {saving ? (
                 <>
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-foreground border-t-transparent" />
-                  Saving...
+                  {pt ? "Salvando..." : "Saving..."}
                 </>
               ) : (
                 <>
                   <Save className="h-4 w-4" />
-                  Save Changes
+                  {pt ? "Salvar alterações" : "Save Changes"}
                 </>
               )}
             </button>
@@ -457,7 +457,7 @@ export function SettingsView({
             {saved && (
               <span className="flex items-center gap-1 text-sm text-green-600">
                 <Check className="h-4 w-4" />
-                Settings saved
+                {pt ? "Configurações salvas" : "Settings saved"}
               </span>
             )}
 

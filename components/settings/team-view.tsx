@@ -23,6 +23,7 @@ import {
 } from "@/lib/actions/team";
 import Link from "next/link";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useLocale } from "@/components/locale-provider";
 
 interface MemberDetail {
   userId: string;
@@ -71,6 +72,11 @@ export function TeamView({
   pendingInvites: PendingInvite[];
 }) {
   const router = useRouter();
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const roleLabel: Record<string, string> = pt
+    ? { owner: "Proprietário", admin: "Administrador", member: "Membro" }
+    : { owner: "Owner", admin: "Admin", member: "Member" };
   const isOwner = currentUserRole === "owner";
 
   const [members, setMembers] = useState(initialMembers);
@@ -148,9 +154,9 @@ export function TeamView({
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold">Team</h1>
+            <h1 className="text-2xl font-bold">{pt ? "Equipe" : "Team"}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Manage members and invitations for {workspaceName}
+              {pt ? `Gerencie membros e convites de ${workspaceName}` : `Manage members and invitations for ${workspaceName}`}
             </p>
           </div>
         </div>
@@ -163,7 +169,7 @@ export function TeamView({
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
               <h2 className="text-sm font-semibold">
-                Members ({members.length})
+                {pt ? "Membros" : "Members"} ({members.length})
               </h2>
             </div>
 
@@ -184,7 +190,7 @@ export function TeamView({
                         </p>
                         {member.userId === currentUserId && (
                           <span className="shrink-0 text-[10px] text-muted-foreground">
-                            (you)
+                            ({pt ? "você" : "you"})
                           </span>
                         )}
                       </div>
@@ -202,12 +208,12 @@ export function TeamView({
                       )}
                     >
                       {roleIcons[member.role] ?? roleIcons.member}
-                      {member.role}
+                      {roleLabel[member.role] ?? member.role}
                     </span>
 
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      Joined{" "}
-                      {new Date(member.joinedAt).toLocaleDateString([], {
+                      {pt ? "Entrou em" : "Joined"}{" "}
+                      {new Date(member.joinedAt).toLocaleDateString(locale, {
                         month: "short",
                         day: "numeric",
                         year: "numeric",
@@ -221,7 +227,7 @@ export function TeamView({
                         }
                         disabled={removingId === member.userId}
                         className="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                        title="Remove member"
+                        title={pt ? "Remover membro" : "Remove member"}
                       >
                         {removingId === member.userId ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -244,10 +250,10 @@ export function TeamView({
               <section>
                 <div className="flex items-center gap-2">
                   <Mail className="h-4 w-4 text-muted-foreground" />
-                  <h2 className="text-sm font-semibold">Invite a Member</h2>
+                  <h2 className="text-sm font-semibold">{pt ? "Convidar um membro" : "Invite a Member"}</h2>
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Send an invitation link. The invite expires in 7 days.
+                  {pt ? "Envie um link de convite. O convite expira em 7 dias." : "Send an invitation link. The invite expires in 7 days."}
                 </p>
 
                 <form onSubmit={handleInvite} className="mt-4 flex gap-2">
@@ -267,8 +273,8 @@ export function TeamView({
                     onChange={(e) => setInviteRole(e.target.value)}
                     className="rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   >
-                    <option value="member">Member</option>
-                    <option value="admin">Admin</option>
+                    <option value="member">{pt ? "Membro" : "Member"}</option>
+                    <option value="admin">{pt ? "Administrador" : "Admin"}</option>
                   </select>
                   <button
                     type="submit"
@@ -280,7 +286,7 @@ export function TeamView({
                     ) : (
                       <Plus className="h-4 w-4" />
                     )}
-                    {inviting ? "Inviting..." : "Invite"}
+                    {inviting ? (pt ? "Convidando..." : "Inviting...") : (pt ? "Convidar" : "Invite")}
                   </button>
                 </form>
 
@@ -289,7 +295,7 @@ export function TeamView({
                 )}
                 {inviteSuccess && (
                   <p className="mt-2 text-xs text-green-600">
-                    Invite sent successfully!
+                    {pt ? "Convite enviado com sucesso!" : "Invite sent successfully!"}
                   </p>
                 )}
               </section>
@@ -305,7 +311,7 @@ export function TeamView({
                 <div className="flex items-center gap-2">
                   <Clock className="h-4 w-4 text-muted-foreground" />
                   <h2 className="text-sm font-semibold">
-                    Pending Invites ({invites.length})
+                    {pt ? "Convites pendentes" : "Pending Invites"} ({invites.length})
                   </h2>
                 </div>
 
@@ -337,18 +343,18 @@ export function TeamView({
                                 )}
                               >
                                 {roleIcons[invite.role] ?? roleIcons.member}
-                                {invite.role}
+                                {roleLabel[invite.role] ?? invite.role}
                               </span>
                               {isExpired ? (
                                 <span className="text-[10px] text-destructive">
-                                  Expired
+                                  {pt ? "Expirado" : "Expired"}
                                 </span>
                               ) : (
                                 <span className="text-[10px] text-muted-foreground">
-                                  Expires{" "}
+                                  {pt ? "Expira em" : "Expires"}{" "}
                                   {new Date(
                                     invite.expires_at
-                                  ).toLocaleDateString([], {
+                                  ).toLocaleDateString(locale, {
                                     month: "short",
                                     day: "numeric",
                                   })}
@@ -363,7 +369,7 @@ export function TeamView({
                             onClick={() => setConfirmRevoke(invite.id)}
                             disabled={revokingId === invite.id}
                             className="shrink-0 ml-4 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-                            title="Revoke invite"
+                            title={pt ? "Revogar convite" : "Revoke invite"}
                           >
                             {revokingId === invite.id ? (
                               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -383,9 +389,10 @@ export function TeamView({
       </div>
       <ConfirmDialog
         open={!!confirmRemove}
-        title="Remove member"
-        message={`Are you sure you want to remove ${confirmRemove?.name ?? "this member"} from the workspace?`}
-        confirmLabel="Remove"
+        title={pt ? "Remover membro" : "Remove member"}
+        message={pt ? `Tem certeza de que deseja remover ${confirmRemove?.name ?? "este membro"} do espaço de trabalho?` : `Are you sure you want to remove ${confirmRemove?.name ?? "this member"} from the workspace?`}
+        confirmLabel={pt ? "Remover" : "Remove"}
+        cancelLabel={pt ? "Cancelar" : "Cancel"}
         destructive
         onConfirm={() => {
           if (confirmRemove) handleRemove(confirmRemove.userId);
@@ -395,9 +402,10 @@ export function TeamView({
       />
       <ConfirmDialog
         open={!!confirmRevoke}
-        title="Revoke invite"
-        message="Are you sure you want to revoke this invitation?"
-        confirmLabel="Revoke"
+        title={pt ? "Revogar convite" : "Revoke invite"}
+        message={pt ? "Tem certeza de que deseja revogar este convite?" : "Are you sure you want to revoke this invitation?"}
+        confirmLabel={pt ? "Revogar" : "Revoke"}
+        cancelLabel={pt ? "Cancelar" : "Cancel"}
         destructive
         onConfirm={() => {
           if (confirmRevoke) handleRevoke(confirmRevoke);

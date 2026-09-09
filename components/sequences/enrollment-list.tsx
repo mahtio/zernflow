@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Users, XCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { cancelEnrollment } from "@/lib/actions/sequences";
+import { useLocale } from "@/components/locale-provider";
 
 interface Enrollment {
   id: string;
@@ -30,8 +31,8 @@ const statusConfig = {
   },
 };
 
-function formatDate(dateStr: string) {
-  return new Date(dateStr).toLocaleDateString("en-US", {
+function formatDate(dateStr: string, locale: string) {
+  return new Date(dateStr).toLocaleDateString(locale, {
     month: "short",
     day: "numeric",
     year: "numeric",
@@ -45,6 +46,11 @@ export function EnrollmentList({
 }: {
   enrollments: Enrollment[];
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const labels = pt
+    ? { active: "Ativa", completed: "Concluída", cancelled: "Cancelada" }
+    : { active: "Active", completed: "Completed", cancelled: "Cancelled" };
   const [enrollments, setEnrollments] = useState(initial);
   const [cancelling, setCancelling] = useState<string | null>(null);
 
@@ -65,19 +71,19 @@ export function EnrollmentList({
   return (
     <div className="px-8 py-6">
       <div className="mx-auto max-w-2xl">
-        <h2 className="text-lg font-semibold">Enrollments</h2>
+        <h2 className="text-lg font-semibold">{pt ? "Inscrições" : "Enrollments"}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Contacts currently in this sequence
+          {pt ? "Contatos atualmente nesta sequência" : "Contacts currently in this sequence"}
         </p>
 
         {enrollments.length === 0 ? (
           <div className="mt-6 rounded-lg border border-dashed border-border p-8 text-center">
             <Users className="mx-auto h-8 w-8 text-muted-foreground/40" />
             <p className="mt-2 text-sm text-muted-foreground">
-              No contacts enrolled yet
+              {pt ? "Ainda não há contatos inscritos" : "No contacts enrolled yet"}
             </p>
             <p className="mt-1 text-xs text-muted-foreground/70">
-              Contacts can be enrolled via flows or manually
+              {pt ? "Os contatos podem ser inscritos por fluxos ou manualmente" : "Contacts can be enrolled via flows or manually"}
             </p>
           </div>
         ) : (
@@ -96,9 +102,9 @@ export function EnrollmentList({
                       {enrollment.contactName}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Step {enrollment.currentStepIndex + 1}
+                      {pt ? "Etapa" : "Step"} {enrollment.currentStepIndex + 1}
                       <span className="mx-1.5">-</span>
-                      Enrolled {formatDate(enrollment.enrolledAt)}
+                      {pt ? "Inscrito em" : "Enrolled"} {formatDate(enrollment.enrolledAt, locale)}
                     </p>
                   </div>
                   <span
@@ -107,14 +113,14 @@ export function EnrollmentList({
                       status.classes
                     )}
                   >
-                    {status.label}
+                    {labels[enrollment.status]}
                   </span>
                   {enrollment.status === "active" && (
                     <button
                       onClick={() => handleCancel(enrollment.id)}
                       disabled={isCancelling}
                       className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 disabled:opacity-50"
-                      title="Cancel enrollment"
+                      title={pt ? "Cancelar inscrição" : "Cancel enrollment"}
                     >
                       {isCancelling ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />

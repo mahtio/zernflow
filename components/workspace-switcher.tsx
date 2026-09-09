@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronDown, Plus, Loader2, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { switchWorkspace, createWorkspace } from "@/lib/actions/workspace";
+import { useLocale } from "@/components/locale-provider";
 
 interface WorkspaceItem {
   id: string;
@@ -25,6 +26,8 @@ export function WorkspaceSwitcher({
   workspaces: WorkspaceItem[];
 }) {
   const router = useRouter();
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
@@ -142,7 +145,7 @@ export function WorkspaceSwitcher({
                 type="text"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                placeholder="Workspace name"
+                placeholder={pt ? "Nome do espaço de trabalho" : "Workspace name"}
                 className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
                 disabled={switching === "new"}
               />
@@ -155,7 +158,7 @@ export function WorkspaceSwitcher({
                   {switching === "new" ? (
                     <Loader2 className="mx-auto h-3.5 w-3.5 animate-spin" />
                   ) : (
-                    "Create"
+                    pt ? "Criar" : "Create"
                   )}
                 </button>
                 <button
@@ -166,7 +169,7 @@ export function WorkspaceSwitcher({
                   }}
                   className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent"
                 >
-                  Cancel
+                  {pt ? "Cancelar" : "Cancel"}
                 </button>
               </div>
             </form>
@@ -176,7 +179,7 @@ export function WorkspaceSwitcher({
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
             >
               <Plus className="h-3.5 w-3.5" />
-              Create workspace
+              {pt ? "Criar espaço de trabalho" : "Create workspace"}
             </button>
           )}
         </div>

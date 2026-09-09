@@ -4,9 +4,12 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Loader2 } from "lucide-react";
 import { createSequence } from "@/lib/actions/sequences";
+import { useLocale } from "@/components/locale-provider";
 
 export function CreateSequenceButton() {
   const router = useRouter();
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [creating, setCreating] = useState(false);
   const pendingRef = useRef(false);
 
@@ -16,11 +19,11 @@ export function CreateSequenceButton() {
     setCreating(true);
 
     try {
-      const result = await createSequence("Untitled Sequence");
+      const result = await createSequence(pt ? "Sequência sem título" : "Untitled Sequence");
 
       if (result.error) {
         console.error("Failed to create sequence:", result.error);
-        alert(`Failed to create sequence: ${result.error}`);
+        alert(pt ? `Não foi possível criar a sequência: ${result.error}` : `Failed to create sequence: ${result.error}`);
         return;
       }
 
@@ -29,7 +32,7 @@ export function CreateSequenceButton() {
       }
     } catch (err) {
       console.error("Failed to create sequence:", err);
-      alert(`Failed to create sequence: ${err instanceof Error ? err.message : "Unknown error"}`);
+      alert(pt ? `Não foi possível criar a sequência: ${err instanceof Error ? err.message : "Erro desconhecido"}` : `Failed to create sequence: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       pendingRef.current = false;
       setCreating(false);
@@ -47,7 +50,7 @@ export function CreateSequenceButton() {
       ) : (
         <Plus className="h-4 w-4" />
       )}
-      {creating ? "Creating..." : "New Sequence"}
+      {creating ? (pt ? "Criando..." : "Creating...") : (pt ? "Nova sequência" : "New Sequence")}
     </button>
   );
 }

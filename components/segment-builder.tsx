@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/types/database";
 import { PLATFORMS, PLATFORM_LABELS } from "@/lib/platforms";
+import { useLocale } from "@/components/locale-provider";
 
 type Tag = Database["public"]["Tables"]["tags"]["Row"];
 type CustomFieldDef =
@@ -139,6 +140,8 @@ function CombinatorToggle({
   value: "and" | "or";
   onChange: (v: "and" | "or") => void;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   return (
     <div className="inline-flex rounded-lg border border-border bg-muted p-0.5">
       <button
@@ -151,7 +154,7 @@ function CombinatorToggle({
             : "text-muted-foreground hover:text-foreground"
         )}
       >
-        AND
+        {pt ? "E" : "AND"}
       </button>
       <button
         type="button"
@@ -163,7 +166,7 @@ function CombinatorToggle({
             : "text-muted-foreground hover:text-foreground"
         )}
       >
-        OR
+        {pt ? "OU" : "OR"}
       </button>
     </div>
   );
@@ -184,6 +187,21 @@ function FilterRuleRow({
   onRemove: () => void;
   canRemove: boolean;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const fieldLabels: Record<FilterField, string> = {
+    has_tag: pt ? "Tem etiqueta" : "Has tag",
+    missing_tag: pt ? "Não tem etiqueta" : "Missing tag",
+    custom_field: pt ? "Campo personalizado" : "Custom field",
+    platform: pt ? "Plataforma" : "Platform",
+    is_subscribed: pt ? "Inscrito" : "Subscribed",
+    last_interaction: pt ? "Última interação" : "Last interaction",
+  };
+  const operatorLabels: Record<FilterOperator, string> = {
+    equals: pt ? "é igual a" : "equals", not_equals: pt ? "não é igual a" : "does not equal",
+    contains: pt ? "contém" : "contains", gt: pt ? "maior que" : "greater than",
+    lt: pt ? "menor que" : "less than", before: pt ? "antes de" : "before", after: pt ? "depois de" : "after",
+  };
   const config = fieldConfig[rule.field];
   const operators = config.operators;
 
@@ -206,7 +224,7 @@ function FilterRuleRow({
             onChange={(e) => onChange({ ...rule, value: e.target.value })}
             className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           >
-            <option value="">Select tag...</option>
+            <option value="">{pt ? "Selecionar etiqueta..." : "Select tag..."}</option>
             {tags.map((tag) => (
               <option key={tag.id} value={tag.id}>
                 {tag.name}
@@ -226,7 +244,7 @@ function FilterRuleRow({
               }}
               className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              <option value="">Select field...</option>
+              <option value="">{pt ? "Selecionar campo..." : "Select field..."}</option>
               {customFields.map((cf) => (
                 <option key={cf.id} value={cf.slug}>
                   {cf.name}
@@ -235,7 +253,7 @@ function FilterRuleRow({
             </select>
             <input
               type="text"
-              placeholder="Value..."
+              placeholder={pt ? "Valor..." : "Value..."}
               value={rule.value.split("::")[1] || ""}
               onChange={(e) => {
                 const fieldSlug = rule.value.split("::")[0] || "";
@@ -252,7 +270,7 @@ function FilterRuleRow({
             onChange={(e) => onChange({ ...rule, value: e.target.value })}
             className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           >
-            <option value="">Select platform...</option>
+            <option value="">{pt ? "Selecionar plataforma..." : "Select platform..."}</option>
             {PLATFORMS.map((p) => (
               <option key={p} value={p}>
                 {PLATFORM_LABELS[p]}
@@ -267,9 +285,9 @@ function FilterRuleRow({
             onChange={(e) => onChange({ ...rule, value: e.target.value })}
             className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           >
-            <option value="">Select...</option>
-            <option value="true">Yes</option>
-            <option value="false">No</option>
+            <option value="">{pt ? "Selecionar..." : "Select..."}</option>
+            <option value="true">{pt ? "Sim" : "Yes"}</option>
+            <option value="false">{pt ? "Não" : "No"}</option>
           </select>
         );
       case "date":
@@ -285,7 +303,7 @@ function FilterRuleRow({
         return (
           <input
             type="text"
-            placeholder="Value..."
+            placeholder={pt ? "Valor..." : "Value..."}
             value={rule.value}
             onChange={(e) => onChange({ ...rule, value: e.target.value })}
             className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -305,7 +323,7 @@ function FilterRuleRow({
         {(Object.entries(fieldConfig) as [FilterField, typeof config][]).map(
           ([key, cfg]) => (
             <option key={key} value={key}>
-              {cfg.label}
+              {fieldLabels[key]}
             </option>
           )
         )}
@@ -322,7 +340,7 @@ function FilterRuleRow({
         >
           {operators.map((op) => (
             <option key={op.value} value={op.value}>
-              {op.label}
+              {operatorLabels[op.value]}
             </option>
           ))}
         </select>
@@ -360,6 +378,9 @@ function FilterGroupCard({
   onRemove: () => void;
   canRemove: boolean;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+
   function updateRule(ruleId: string, updated: FilterRule) {
     onChange({
       ...group,
@@ -386,14 +407,14 @@ function FilterGroupCard({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground uppercase">
-            Match
+            {pt ? "Corresponder a" : "Match"}
           </span>
           <CombinatorToggle
             value={group.combinator}
             onChange={(v) => onChange({ ...group, combinator: v })}
           />
           <span className="text-xs font-medium text-muted-foreground uppercase">
-            of the following
+            {pt ? "das condições abaixo" : "of the following"}
           </span>
         </div>
         {canRemove && (
@@ -436,7 +457,7 @@ function FilterGroupCard({
         className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
       >
         <Plus className="h-3 w-3" />
-        Add filter
+        {pt ? "Adicionar filtro" : "Add filter"}
       </button>
     </div>
   );
@@ -453,6 +474,8 @@ export function SegmentBuilder({
   onChange: (filter: SegmentFilter) => void;
   workspaceId: string;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [tags, setTags] = useState<Tag[]>([]);
   const [customFields, setCustomFields] = useState<CustomFieldDef[]>([]);
   const [loading, setLoading] = useState(true);
@@ -503,7 +526,7 @@ export function SegmentBuilder({
   if (loading) {
     return (
       <div className="rounded-lg border border-border bg-card p-6 text-center">
-        <p className="text-sm text-muted-foreground">Loading filters...</p>
+        <p className="text-sm text-muted-foreground">{pt ? "Carregando filtros..." : "Loading filters..."}</p>
       </div>
     );
   }
@@ -514,7 +537,7 @@ export function SegmentBuilder({
       {value.groups.length > 1 && (
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-muted-foreground uppercase">
-            Groups match
+            {pt ? "Grupos correspondem a" : "Groups match"}
           </span>
           <CombinatorToggle
             value={value.combinator}
@@ -551,7 +574,7 @@ export function SegmentBuilder({
         className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-border px-3 py-2 text-xs font-medium text-muted-foreground hover:border-primary hover:text-primary transition-colors"
       >
         <Plus className="h-3 w-3" />
-        Add filter group
+        {pt ? "Adicionar grupo de filtros" : "Add filter group"}
       </button>
 
       {/* JSON preview (collapsible) */}
@@ -561,6 +584,8 @@ export function SegmentBuilder({
 }
 
 function ExportPreview({ filter }: { filter: SegmentFilter }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -570,7 +595,7 @@ function ExportPreview({ filter }: { filter: SegmentFilter }) {
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
       >
-        <span>Filter JSON</span>
+        <span>{pt ? "JSON do filtro" : "Filter JSON"}</span>
         <ChevronDown
           className={cn(
             "h-3.5 w-3.5 transition-transform",

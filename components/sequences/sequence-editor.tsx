@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { updateSequence, deleteSequence } from "@/lib/actions/sequences";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { useLocale } from "@/components/locale-provider";
 import type { SequenceStep } from "@/lib/types/database";
 
 interface SequenceEditorProps {
@@ -46,6 +47,8 @@ const statusConfig = {
 
 export function SequenceEditor({ sequence }: SequenceEditorProps) {
   const router = useRouter();
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [name, setName] = useState(sequence.name);
   const [description, setDescription] = useState(sequence.description || "");
   const [steps, setSteps] = useState<SequenceStep[]>(sequence.steps);
@@ -73,7 +76,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
     if (result.error) {
       setError(result.error);
     } else {
-      setSuccess("Saved");
+      setSuccess(pt ? "Salvo" : "Saved");
       setTimeout(() => setSuccess(null), 2000);
     }
     setSaving(false);
@@ -125,7 +128,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
       setStatus("paused");
     } else {
       if (!hasMessageStep) {
-        setError("Add at least one message step before activating");
+        setError(pt ? "Adicione pelo menos uma etapa de mensagem antes de ativar" : "Add at least one message step before activating");
         return;
       }
       setStatus("active");
@@ -133,6 +136,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
   }, [status, hasMessageStep]);
 
   const statusInfo = statusConfig[status];
+  const statusLabel = pt ? ({ draft: "Rascunho", active: "Ativa", paused: "Pausada" }[status]) : statusInfo.label;
 
   return (
     <div className="flex-1 overflow-auto">
@@ -152,7 +156,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 className="text-2xl font-bold bg-transparent border-none outline-none focus:ring-0 p-0"
-                placeholder="Sequence name"
+                placeholder={pt ? "Nome da sequência" : "Sequence name"}
               />
               <span
                 className={cn(
@@ -160,7 +164,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
                   statusInfo.classes
                 )}
               >
-                {statusInfo.label}
+                {statusLabel}
               </span>
             </div>
           </div>
@@ -174,7 +178,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
                   : "border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
               )}
             >
-              {status === "active" ? "Pause" : "Activate"}
+              {status === "active" ? (pt ? "Pausar" : "Pause") : (pt ? "Ativar" : "Activate")}
             </button>
             <button
               onClick={handleSave}
@@ -182,21 +186,22 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {saving ? "Saving..." : "Save"}
+              {saving ? (pt ? "Salvando..." : "Saving...") : (pt ? "Salvar" : "Save")}
             </button>
             <button
               onClick={() => setConfirmDelete(true)}
               disabled={deleting}
               className="rounded-lg p-2 text-muted-foreground hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-              title="Delete sequence"
+              title={pt ? "Excluir sequência" : "Delete sequence"}
             >
               <Trash2 className="h-4 w-4" />
             </button>
             <ConfirmDialog
               open={confirmDelete}
-              title="Delete sequence"
-              message="Are you sure you want to delete this sequence? This action cannot be undone."
-              confirmLabel="Delete"
+              title={pt ? "Excluir sequência" : "Delete sequence"}
+              message={pt ? "Tem certeza de que deseja excluir esta sequência? Esta ação não pode ser desfeita." : "Are you sure you want to delete this sequence? This action cannot be undone."}
+              confirmLabel={pt ? "Excluir" : "Delete"}
+              cancelLabel={pt ? "Cancelar" : "Cancel"}
               destructive
               onConfirm={() => {
                 setConfirmDelete(false);
@@ -214,12 +219,12 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
           {/* Description */}
           <div>
             <label className="mb-1.5 block text-sm font-medium">
-              Description
+              {pt ? "Descrição" : "Description"}
             </label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="What is this sequence for?"
+              placeholder={pt ? "Para que serve esta sequência?" : "What is this sequence for?"}
               rows={2}
               className="w-full rounded-lg border border-input bg-background px-4 py-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
@@ -241,7 +246,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
 
           {/* Steps */}
           <div>
-            <label className="mb-3 block text-sm font-medium">Steps</label>
+            <label className="mb-3 block text-sm font-medium">{pt ? "Etapas" : "Steps"}</label>
 
             {/* Add button at the top */}
             <AddStepButton onAdd={(type) => addStep(0, type)} />
@@ -249,7 +254,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
             {steps.length === 0 && (
               <div className="rounded-lg border border-dashed border-border p-8 text-center">
                 <p className="text-sm text-muted-foreground">
-                  No steps yet. Click the + button above to add your first step.
+                  {pt ? "Ainda não há etapas. Clique no botão + acima para adicionar a primeira etapa." : "No steps yet. Click the + button above to add your first step."}
                 </p>
               </div>
             )}
@@ -259,6 +264,7 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
                 <StepCard
                   step={step}
                   index={index}
+                  pt={pt}
                   onChange={(data) => updateStep(index, data)}
                   onRemove={() => removeStep(index)}
                 />
@@ -275,11 +281,13 @@ export function SequenceEditor({ sequence }: SequenceEditorProps) {
 function StepCard({
   step,
   index,
+  pt,
   onChange,
   onRemove,
 }: {
   step: SequenceStep;
   index: number;
+  pt: boolean;
   onChange: (data: Partial<SequenceStep>) => void;
   onRemove: () => void;
 }) {
@@ -303,7 +311,7 @@ function StepCard({
           </div>
           <div>
             <p className="text-sm font-medium">
-              Step {index + 1}: {isMessage ? "Send Message" : "Wait"}
+              {pt ? "Etapa" : "Step"} {index + 1}: {isMessage ? (pt ? "Enviar mensagem" : "Send Message") : (pt ? "Aguardar" : "Wait")}
             </p>
           </div>
         </div>
@@ -320,13 +328,14 @@ function StepCard({
           <textarea
             value={step.content || ""}
             onChange={(e) => onChange({ content: e.target.value })}
-            placeholder="Type your message..."
+            placeholder={pt ? "Digite sua mensagem..." : "Type your message..."}
             rows={3}
             className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
           />
         ) : (
           <DelayPicker
             minutes={step.delayMinutes || 60}
+            pt={pt}
             onChange={(delayMinutes) => onChange({ delayMinutes })}
           />
         )}
@@ -337,9 +346,11 @@ function StepCard({
 
 function DelayPicker({
   minutes,
+  pt,
   onChange,
 }: {
   minutes: number;
+  pt: boolean;
   onChange: (minutes: number) => void;
 }) {
   // Convert minutes to the best unit
@@ -372,7 +383,7 @@ function DelayPicker({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="text-sm text-muted-foreground">Wait for</span>
+      <span className="text-sm text-muted-foreground">{pt ? "Aguardar por" : "Wait for"}</span>
       <input
         type="number"
         min={1}
@@ -392,9 +403,9 @@ function DelayPicker({
         }}
         className="rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
       >
-        <option value="minutes">Minutes</option>
-        <option value="hours">Hours</option>
-        <option value="days">Days</option>
+        <option value="minutes">{pt ? "Minutos" : "Minutes"}</option>
+        <option value="hours">{pt ? "Horas" : "Hours"}</option>
+        <option value="days">{pt ? "Dias" : "Days"}</option>
       </select>
     </div>
   );
@@ -405,6 +416,8 @@ function AddStepButton({
 }: {
   onAdd: (type: "message" | "delay") => void;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [open, setOpen] = useState(false);
 
   return (
@@ -419,7 +432,7 @@ function AddStepButton({
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
           >
             <MessageSquare className="h-3 w-3" />
-            Message
+            {pt ? "Mensagem" : "Message"}
           </button>
           <button
             onClick={() => {
@@ -429,13 +442,13 @@ function AddStepButton({
             className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent transition-colors"
           >
             <Clock className="h-3 w-3" />
-            Wait
+            {pt ? "Aguardar" : "Wait"}
           </button>
           <button
             onClick={() => setOpen(false)}
             className="rounded-lg px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent"
           >
-            Cancel
+            {pt ? "Cancelar" : "Cancel"}
           </button>
         </div>
       ) : (

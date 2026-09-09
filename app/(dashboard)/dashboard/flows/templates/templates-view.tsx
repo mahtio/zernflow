@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
+import { useLocale } from "@/components/locale-provider";
 
 // --- Template types ---
 
@@ -277,6 +278,13 @@ const templates: FlowTemplate[] = [
 
 export function TemplatesView({ workspaceId }: { workspaceId: string }) {
   const router = useRouter();
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const templateCopy: Record<string, { name: string; description: string; category: string }> = {
+    "welcome-flow": { name: "Fluxo de boas-vindas", description: "Receba novos usuários com uma mensagem de boas-vindas e envie um acompanhamento para manter o engajamento.", category: "Integração" },
+    "faq-bot": { name: "Bot de perguntas frequentes", description: "Responda às palavras-chave de ajuda e direcione a conversa para diferentes respostas.", category: "Suporte" },
+    "lead-capture": { name: "Captura de leads", description: "Colete dados do lead passo a passo, salve as respostas e aplique uma etiqueta ao contato.", category: "Marketing" },
+  };
   const [creating, setCreating] = useState<string | null>(null);
   const pendingRef = useRef(false);
 
@@ -322,21 +330,21 @@ export function TemplatesView({ workspaceId }: { workspaceId: string }) {
                 className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Flows
+                {pt ? "Fluxos" : "Flows"}
               </Link>
             </div>
-            <h1 className="text-2xl font-bold">Flow Templates</h1>
+            <h1 className="text-2xl font-bold">{pt ? "Modelos de fluxo" : "Flow Templates"}</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Start with a pre-built flow and customize it to your needs
+              {pt ? "Comece com um fluxo pronto e personalize-o para suas necessidades" : "Start with a pre-built flow and customize it to your needs"}
             </p>
           </div>
           <button
             disabled
             className="inline-flex items-center gap-2 rounded-lg border border-dashed border-border px-4 py-2 text-sm font-medium text-muted-foreground cursor-not-allowed opacity-60"
-            title="Coming soon"
+            title={pt ? "Em breve" : "Coming soon"}
           >
             <BookmarkPlus className="h-4 w-4" />
-            Save Current Flow as Template
+            {pt ? "Salvar fluxo atual como modelo" : "Save Current Flow as Template"}
           </button>
         </div>
       </div>
@@ -348,6 +356,7 @@ export function TemplatesView({ workspaceId }: { workspaceId: string }) {
             const isCreating = creating === template.id;
             const Icon = template.icon;
             const nodeCount = template.nodes.length;
+            const localized = pt ? templateCopy[template.id] : template;
 
             return (
               <div
@@ -365,23 +374,23 @@ export function TemplatesView({ workspaceId }: { workspaceId: string }) {
                     <Icon className={cn("h-5 w-5", template.iconColor)} />
                   </div>
                   <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    {template.category}
+                    {localized.category}
                   </span>
                 </div>
 
                 {/* Name + description */}
                 <h3 className="mt-4 text-sm font-semibold group-hover:text-primary transition-colors">
-                  {template.name}
+                  {localized.name}
                 </h3>
                 <p className="mt-2 text-xs text-muted-foreground leading-relaxed">
-                  {template.description}
+                  {localized.description}
                 </p>
 
                 {/* Node count */}
                 <div className="mt-4 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <GitBranch className="h-3 w-3" />
                   <span>
-                    {nodeCount} {nodeCount === 1 ? "node" : "nodes"}
+                    {nodeCount} {nodeCount === 1 ? (pt ? "nó" : "node") : (pt ? "nós" : "nodes")}
                   </span>
                 </div>
 
@@ -394,12 +403,12 @@ export function TemplatesView({ workspaceId }: { workspaceId: string }) {
                   {isCreating ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      Creating...
+                      {pt ? "Criando..." : "Creating..."}
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-2">
                       <Sparkles className="h-3.5 w-3.5" />
-                      Use Template
+                      {pt ? "Usar modelo" : "Use Template"}
                     </span>
                   )}
                 </button>

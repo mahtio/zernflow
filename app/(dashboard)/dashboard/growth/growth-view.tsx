@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/types/database";
 import { PLATFORM_LABELS } from "@/lib/platforms";
+import { useLocale } from "@/components/locale-provider";
 
 type Channel = Database["public"]["Tables"]["channels"]["Row"];
 type CommentLog = Database["public"]["Tables"]["comment_logs"]["Row"];
@@ -62,6 +63,8 @@ export function GrowthView({
   };
   recentLogs: CommentLog[];
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [triggers, setTriggers] = useState(initialTriggers);
   const [showCreate, setShowCreate] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
@@ -290,10 +293,10 @@ export function GrowthView({
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground">
-              Growth Tools
+              {pt ? "Ferramentas de crescimento" : "Growth Tools"}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Comment-to-DM automation for lead capture and engagement
+              {pt ? "Automação de comentários para mensagens diretas, captura de leads e engajamento" : "Comment-to-DM automation for lead capture and engagement"}
             </p>
           </div>
           <button
@@ -302,7 +305,7 @@ export function GrowthView({
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
-            New Comment Rule
+            {pt ? "Nova regra de comentário" : "New Comment Rule"}
           </button>
         </div>
       </div>
@@ -311,28 +314,28 @@ export function GrowthView({
         {/* Stats cards */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
-            label="Comments Processed"
+            label={pt ? "Comentários processados" : "Comments Processed"}
             value={stats.totalComments}
             icon={<Eye className="h-4 w-4" />}
-            sublabel="Last 30 days"
+            sublabel={pt ? "Últimos 30 dias" : "Last 30 days"}
           />
           <StatCard
-            label="Keywords Matched"
+            label={pt ? "Palavras-chave correspondentes" : "Keywords Matched"}
             value={stats.matchedComments}
             icon={<MessageCircle className="h-4 w-4" />}
-            sublabel="Last 30 days"
+            sublabel={pt ? "Últimos 30 dias" : "Last 30 days"}
           />
           <StatCard
-            label="DMs Sent"
+            label={pt ? "Mensagens diretas enviadas" : "DMs Sent"}
             value={stats.dmsSent}
             icon={<Send className="h-4 w-4" />}
-            sublabel="Last 30 days"
+            sublabel={pt ? "Últimos 30 dias" : "Last 30 days"}
           />
           <StatCard
-            label="Conversion Rate"
+            label={pt ? "Taxa de conversão" : "Conversion Rate"}
             value={`${conversionRate}%`}
             icon={<TrendingUp className="h-4 w-4" />}
-            sublabel="Comments to DMs"
+            sublabel={pt ? "Comentários para mensagens diretas" : "Comments to DMs"}
           />
         </div>
 
@@ -341,7 +344,7 @@ export function GrowthView({
           <div ref={createFormRef} className="mt-6 rounded-xl border border-border bg-card p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-foreground">
-                {editingId ? "Edit Comment-to-DM Rule" : "Create Comment-to-DM Rule"}
+                {editingId ? (pt ? "Editar regra de comentário para mensagem direta" : "Edit Comment-to-DM Rule") : (pt ? "Criar regra de comentário para mensagem direta" : "Create Comment-to-DM Rule")}
               </h2>
               <button
                 onClick={handleCancelForm}
@@ -355,7 +358,7 @@ export function GrowthView({
               {/* Channel */}
               <div>
                 <label className="text-xs font-medium text-muted-foreground">
-                  Channel
+                  {pt ? "Canal" : "Channel"}
                 </label>
                 <select
                   value={form.channelId}
@@ -376,7 +379,7 @@ export function GrowthView({
               {/* Flow */}
               <div>
                 <label className="text-xs font-medium text-muted-foreground">
-                  Response Flow
+                  {pt ? "Fluxo de resposta" : "Response Flow"}
                 </label>
                 <select
                   value={form.flowId}
@@ -396,7 +399,7 @@ export function GrowthView({
               {/* Keywords */}
               <div>
                 <label className="text-xs font-medium text-muted-foreground">
-                  Keywords (comma-separated)
+                  {pt ? "Palavras-chave (separadas por vírgula)" : "Keywords (comma-separated)"}
                 </label>
                 <input
                   type="text"
@@ -412,7 +415,7 @@ export function GrowthView({
               {/* Match Type */}
               <div>
                 <label className="text-xs font-medium text-muted-foreground">
-                  Match Type
+                  {pt ? "Tipo de correspondência" : "Match Type"}
                 </label>
                 <select
                   value={form.matchType}
@@ -427,16 +430,16 @@ export function GrowthView({
                   }
                   className="mt-1.5 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
                 >
-                  <option value="contains">Contains</option>
-                  <option value="exact">Exact match</option>
-                  <option value="startsWith">Starts with</option>
+                  <option value="contains">{pt ? "Contém" : "Contains"}</option>
+                  <option value="exact">{pt ? "Correspondência exata" : "Exact match"}</option>
+                  <option value="startsWith">{pt ? "Começa com" : "Starts with"}</option>
                 </select>
               </div>
 
               {/* Public reply text (optional) */}
               <div className="sm:col-span-2">
                 <label className="text-xs font-medium text-muted-foreground">
-                  Public Reply (optional)
+                  {pt ? "Resposta pública (opcional)" : "Public Reply (optional)"}
                 </label>
                 <input
                   type="text"
@@ -444,19 +447,18 @@ export function GrowthView({
                   onChange={(e) =>
                     setForm((f) => ({ ...f, replyText: e.target.value }))
                   }
-                  placeholder="Check your DMs! We just sent you more info."
+                  placeholder={pt ? "Confira suas mensagens! Acabamos de enviar mais informações." : "Check your DMs! We just sent you more info."}
                   className="mt-1.5 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground/60">
-                  If set, this will be posted as a public reply to the matching
-                  comment before sending the DM.
+                  {pt ? "Se preenchida, esta resposta será publicada no comentário correspondente antes do envio da mensagem direta." : "If set, this will be posted as a public reply to the matching comment before sending the DM."}
                 </p>
               </div>
 
               {/* Post IDs (optional) */}
               <div className="sm:col-span-2">
                 <label className="text-xs font-medium text-muted-foreground">
-                  Specific Post IDs (optional, comma-separated)
+                  {pt ? "IDs de publicações específicas (opcional, separados por vírgula)" : "Specific Post IDs (optional, comma-separated)"}
                 </label>
                 <input
                   type="text"
@@ -464,12 +466,11 @@ export function GrowthView({
                   onChange={(e) =>
                     setForm((f) => ({ ...f, postIds: e.target.value }))
                   }
-                  placeholder="Leave empty to match comments on all posts"
+                  placeholder={pt ? "Deixe vazio para considerar comentários de todas as publicações" : "Leave empty to match comments on all posts"}
                   className="mt-1.5 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground/60">
-                  Limit this rule to specific Zernio post IDs. If empty, all posts
-                  on this channel are monitored.
+                  {pt ? "Limite esta regra a IDs específicos de publicações do Zernio. Se ficar vazio, todas as publicações deste canal serão monitoradas." : "Limit this rule to specific Zernio post IDs. If empty, all posts on this channel are monitored."}
                 </p>
               </div>
             </div>
@@ -479,7 +480,7 @@ export function GrowthView({
                 onClick={handleCancelForm}
                 className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-muted"
               >
-                Cancel
+                {pt ? "Cancelar" : "Cancel"}
               </button>
               {editingId ? (
                 <button
@@ -489,7 +490,7 @@ export function GrowthView({
                   }
                   className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
-                  {saving ? "Saving..." : "Save Changes"}
+                  {saving ? (pt ? "Salvando..." : "Saving...") : (pt ? "Salvar alterações" : "Save Changes")}
                 </button>
               ) : (
                 <button
@@ -499,7 +500,7 @@ export function GrowthView({
                   }
                   className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
-                  {creating ? "Creating..." : "Create Rule"}
+                  {creating ? (pt ? "Criando..." : "Creating...") : (pt ? "Criar regra" : "Create Rule")}
                 </button>
               )}
             </div>
@@ -511,16 +512,16 @@ export function GrowthView({
           <div className="mt-8 rounded-xl border border-dashed border-input p-8 text-center">
             <MessageCircle className="mx-auto h-10 w-10 text-muted-foreground/50" />
             <h2 className="mt-3 text-lg font-semibold text-foreground">
-              Connect a channel first
+              {pt ? "Conecte um canal primeiro" : "Connect a channel first"}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              You need at least one active channel to set up comment automation.
+              {pt ? "Você precisa de pelo menos um canal ativo para configurar a automação de comentários." : "You need at least one active channel to set up comment automation."}
             </p>
             <a
               href="/dashboard/channels"
               className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
-              Go to Channels
+              {pt ? "Ir para canais" : "Go to Channels"}
             </a>
           </div>
         )}
@@ -529,17 +530,16 @@ export function GrowthView({
           <div className="mt-8 rounded-xl border border-dashed border-input p-8 text-center">
             <MessageCircle className="mx-auto h-10 w-10 text-muted-foreground/50" />
             <h2 className="mt-3 text-lg font-semibold text-foreground">
-              Create a flow first
+              {pt ? "Crie um fluxo primeiro" : "Create a flow first"}
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Publish at least one flow to use as the DM response when comments
-              match your keywords.
+              {pt ? "Publique pelo menos um fluxo para responder por mensagem direta quando os comentários corresponderem às palavras-chave." : "Publish at least one flow to use as the DM response when comments match your keywords."}
             </p>
             <Link
               href="/dashboard/flows"
               className="mt-4 inline-flex rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
             >
-              Go to Flows
+              {pt ? "Ir para fluxos" : "Go to Flows"}
             </Link>
           </div>
         )}
