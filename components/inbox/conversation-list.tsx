@@ -5,13 +5,14 @@ import { Search, MessageSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
+import { useLocale } from "@/components/locale-provider";
 import type { Database, Platform, ConversationStatus } from "@/lib/types/database";
 
 type Conversation = Database["public"]["Tables"]["conversations"]["Row"] & {
   contacts: Database["public"]["Tables"]["contacts"]["Row"] | null;
 };
 
-function formatTime(dateStr: string | null): string {
+function formatTime(dateStr: string | null, locale: string, yesterday: string): string {
   if (!dateStr) return "";
   const date = new Date(dateStr);
   const now = new Date();
@@ -19,13 +20,13 @@ function formatTime(dateStr: string | null): string {
   const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   }
-  if (diffDays === 1) return "Yesterday";
+  if (diffDays === 1) return yesterday;
   if (diffDays < 7) {
-    return date.toLocaleDateString([], { weekday: "short" });
+    return date.toLocaleDateString(locale, { weekday: "short" });
   }
-  return date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return date.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
 export function ConversationList({
@@ -39,6 +40,8 @@ export function ConversationList({
   selectedId: string | null;
   onSelect: (conversation: Conversation) => void;
 }) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
   const [conversations, setConversations] = useState(initialConversations);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<ConversationStatus | "all">("open");
@@ -115,9 +118,9 @@ export function ConversationList({
     <div className="flex h-full flex-col border-r border-border bg-background">
       {/* Header */}
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
-        <h2 className="text-sm font-semibold">Inbox</h2>
+        <h2 className="text-sm font-semibold">{pt ? "Caixa de entrada" : "Inbox"}</h2>
         <span className="text-xs text-muted-foreground">
-          {filtered.length} conversation{filtered.length !== 1 ? "s" : ""}
+          {filtered.length} {pt ? `conversa${filtered.length !== 1 ? "s" : ""}` : `conversation${filtered.length !== 1 ? "s" : ""}`}
         </span>
       </div>
 
@@ -127,7 +130,7 @@ export function ConversationList({
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Search conversations..."
+            placeholder={pt ? "Buscar conversas..." : "Search conversations..."}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full rounded-lg border border-input bg-background py-2 pl-9 pr-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
@@ -148,7 +151,7 @@ export function ConversationList({
                 : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
             )}
           >
-            {status}
+            {pt ? ({ all: "Todas", open: "Abertas", closed: "Fechadas", snoozed: "Pausadas" }[status]) : status}
           </button>
         ))}
       </div>
@@ -158,7 +161,7 @@ export function ConversationList({
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-center">
             <MessageSquare className="h-8 w-8 text-muted-foreground/50" />
-            <p className="mt-2 text-sm text-muted-foreground">No conversations found</p>
+            <p className="mt-2 text-sm text-muted-foreground">{pt ? "Nenhuma conversa encontrada" : "No conversations found"}</p>
           </div>
         ) : (
           filtered.map((conversation) => (
@@ -196,18 +199,18 @@ export function ConversationList({
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between">
                   <p className="truncate text-sm font-medium">
-                    {conversation.contacts?.display_name ?? "Unknown"}
+                    {conversation.contacts?.display_name ?? (pt ? "Desconhecido" : "Unknown")}
                   </p>
                   <span
                     suppressHydrationWarning
                     className="flex-shrink-0 text-[11px] text-muted-foreground"
                   >
-                    {mounted ? formatTime(conversation.last_message_at) : ""}
+                    {mounted ? formatTime(conversation.last_message_at, locale, pt ? "Ontem" : "Yesterday") : ""}
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {conversation.last_message_preview ?? "No messages yet"}
+                    {conversation.last_message_preview ?? (pt ? "Ainda não há mensagens" : "No messages yet")}
                   </p>
                   {conversation.unread_count > 0 && (
                     <span className="ml-2 flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
