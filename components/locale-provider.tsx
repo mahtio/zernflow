@@ -37,6 +37,9 @@ type Messages = {
   contactsInWorkspace: (count: number) => string;
   searchContacts: string;
   segment: string;
+  columns: string;
+  visibleColumns: string;
+  exportCsv: string;
   all: string;
   noContactsFound: string;
   contactsEmptyDescription: string;
@@ -96,6 +99,9 @@ const messages: Record<Locale, Messages> = {
     contactsInWorkspace: (count) => `${count} contact${count !== 1 ? "s" : ""} in your workspace`,
     searchContacts: "Search by name or email...",
     segment: "Segment",
+    columns: "Columns",
+    visibleColumns: "Visible columns",
+    exportCsv: "Export CSV",
     all: "All",
     noContactsFound: "No contacts found",
     contactsEmptyDescription: "Contacts are created automatically when someone messages your channels",
@@ -153,6 +159,9 @@ const messages: Record<Locale, Messages> = {
     contactsInWorkspace: (count) => `${count} contato${count !== 1 ? "s" : ""} no seu espaço de trabalho`,
     searchContacts: "Buscar por nome ou e-mail...",
     segment: "Segmento",
+    columns: "Colunas",
+    visibleColumns: "Colunas visíveis",
+    exportCsv: "Exportar CSV",
     all: "Todos",
     noContactsFound: "Nenhum contato encontrado",
     contactsEmptyDescription: "Os contatos são criados automaticamente quando alguém envia uma mensagem pelos seus canais",

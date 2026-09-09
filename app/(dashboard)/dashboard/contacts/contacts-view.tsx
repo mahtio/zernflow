@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -11,6 +11,8 @@ import {
   XCircle,
   Filter,
   ChevronDown,
+  Download,
+  SlidersHorizontal,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -28,6 +30,21 @@ type ContactWithTags = Database["public"]["Tables"]["contacts"]["Row"] & {
     tags: Tag | null;
   }[];
 };
+
+type ColumnId = "name" | "email" | "lastInteraction" | "tags" | "subscribed";
+
+const ALL_COLUMNS: ColumnId[] = [
+  "name",
+  "email",
+  "lastInteraction",
+  "tags",
+  "subscribed",
+];
+const COLUMN_STORAGE_KEY = "contacts-visible-columns";
+
+function escapeCsv(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
 
 function formatDate(
   dateStr: string | null,
@@ -62,6 +79,20 @@ export function ContactsView({
   const [segmentFilter, setSegmentFilter] = useState<SegmentFilter>(
     createEmptyFilter()
   );
+  const [visibleColumns, setVisibleColumns] = useState<ColumnId[]>(ALL_COLUMNS);
+
+  useEffect(() => {
+    const savedColumns = localStorage.getItem(COLUMN_STORAGE_KEY);
+    if (!savedColumns) return;
+
+    try {
+      const parsed = JSON.parse(savedColumns) as string[];
+      const validColumns = ALL_COLUMNS.filter((column) => parsed.includes(column));
+      if (validColumns.length > 0) setVisibleColumns(validColumns);
+    } catch {
+      localStorage.removeItem(COLUMN_STORAGE_KEY);
+    }
+  }, []);
 
   const filtered = contacts.filter((contact) => {
     // Search filter
@@ -80,6 +111,56 @@ export function ContactsView({
     }
     return true;
   });
+
+  const columnLabels: Record<ColumnId, string> = {
+    name: t.tableName,
+    email: t.tableEmail,
+    lastInteraction: t.lastInteraction,
+    tags: t.tags,
+    subscribed: t.subscribed,
+  };
+
+  function toggleColumn(column: ColumnId) {
+    const nextColumns = visibleColumns.includes(column)
+      ? visibleColumns.filter((item) => item !== column)
+      : ALL_COLUMNS.filter(
+          (item) => item === column || visibleColumns.includes(item)
+        );
+
+    if (nextColumns.length === 0) return;
+    setVisibleColumns(nextColumns);
+    localStorage.setItem(COLUMN_STORAGE_KEY, JSON.stringify(nextColumns));
+  }
+
+  function exportCsv() {
+    const headers = visibleColumns.map((column) => columnLabels[column]);
+    const rows = filtered.map((contact) => {
+      const contactTags = contact.contact_tags
+        .map((contactTag) => contactTag.tags?.name)
+        .filter(Boolean)
+        .join(", ");
+      const values: Record<ColumnId, string> = {
+        name: contact.display_name ?? "",
+        email: contact.email ?? "",
+        lastInteraction: contact.last_interaction_at
+          ? new Date(contact.last_interaction_at).toLocaleString(locale)
+          : t.never,
+        tags: contactTags,
+        subscribed: contact.is_subscribed ? t.yes : t.no,
+      };
+      return visibleColumns.map((column) => values[column]);
+    });
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCsv).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `contacts-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -123,6 +204,44 @@ export function ContactsView({
                 showSegmentBuilder && "rotate-180"
               )}
             />
+          </button>
+          <details className="group relative">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-2 rounded-lg border border-input px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden">
+              <SlidersHorizontal className="h-4 w-4" />
+              {t.columns}
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="absolute right-0 z-20 mt-2 w-52 rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-lg">
+              <p className="px-2 pb-2 pt-1 text-xs font-medium text-muted-foreground">
+                {t.visibleColumns}
+              </p>
+              {ALL_COLUMNS.map((column) => (
+                <label
+                  key={column}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleColumns.includes(column)}
+                    onChange={() => toggleColumn(column)}
+                    disabled={
+                      visibleColumns.length === 1 &&
+                      visibleColumns.includes(column)
+                    }
+                    className="h-4 w-4 rounded border-input accent-primary"
+                  />
+                  {columnLabels[column]}
+                </label>
+              ))}
+            </div>
+          </details>
+          <button
+            onClick={exportCsv}
+            disabled={filtered.length === 0}
+            className="inline-flex items-center gap-2 rounded-lg border border-input px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-4 w-4" />
+            {t.exportCsv}
           </button>
         </div>
 
@@ -195,21 +314,17 @@ export function ContactsView({
           <table className="w-full">
             <thead>
               <tr className="border-b border-border bg-muted/50 text-left">
-                <th className="px-8 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  {t.tableName}
-                </th>
-                <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  {t.tableEmail}
-                </th>
-                <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  {t.lastInteraction}
-                </th>
-                <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  {t.tags}
-                </th>
-                <th className="px-4 py-3 text-xs font-medium uppercase text-muted-foreground">
-                  {t.subscribed}
-                </th>
+                {visibleColumns.map((column, index) => (
+                  <th
+                    key={column}
+                    className={cn(
+                      "py-3 text-xs font-medium uppercase text-muted-foreground",
+                      index === 0 ? "px-8" : "px-4"
+                    )}
+                  >
+                    {columnLabels[column]}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -223,91 +338,123 @@ export function ContactsView({
                     key={contact.id}
                     className="border-b border-border transition-colors hover:bg-accent/50"
                   >
-                    <td className="px-8 py-3">
-                      <Link
-                        href={`/dashboard/contacts/${contact.id}`}
-                        className="flex items-center gap-3"
+                    {visibleColumns.includes("name") && (
+                      <td className="px-8 py-3">
+                        <Link
+                          href={`/dashboard/contacts/${contact.id}`}
+                          className="flex items-center gap-3"
+                        >
+                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
+                            {contact.avatar_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={contact.avatar_url}
+                                alt={contact.display_name || "Contact"}
+                                className="h-8 w-8 rounded-full object-cover"
+                              />
+                            ) : (
+                              contact.display_name?.[0]?.toUpperCase() ?? "?"
+                            )}
+                          </div>
+                          <span className="text-sm font-medium hover:underline">
+                            {contact.display_name ?? "Unknown"}
+                          </span>
+                        </Link>
+                      </td>
+                    )}
+                    {visibleColumns.includes("email") && (
+                      <td
+                        className={cn(
+                          "py-3",
+                          visibleColumns[0] === "email" ? "px-8" : "px-4"
+                        )}
                       >
-                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium">
-                          {contact.avatar_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                              src={contact.avatar_url}
-                              alt={contact.display_name || "Contact"}
-                              className="h-8 w-8 rounded-full object-cover"
-                            />
-                          ) : (
-                            contact.display_name?.[0]?.toUpperCase() ?? "?"
-                          )}
-                        </div>
-                        <span className="text-sm font-medium hover:underline">
-                          {contact.display_name ?? "Unknown"}
-                        </span>
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      {contact.email ? (
+                        {contact.email ? (
+                          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                            <Mail className="h-3 w-3" />
+                            {contact.email}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50">
+                            {t.noEmail}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    {visibleColumns.includes("lastInteraction") && (
+                      <td
+                        className={cn(
+                          "py-3",
+                          visibleColumns[0] === "lastInteraction"
+                            ? "px-8"
+                            : "px-4"
+                        )}
+                      >
                         <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                          <Mail className="h-3 w-3" />
-                          {contact.email}
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(contact.last_interaction_at, locale, t)}
                         </span>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50">
-                          {t.noEmail}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                        <Calendar className="h-3 w-3" />
-                        {formatDate(contact.last_interaction_at, locale, t)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      {contactTags.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {contactTags.slice(0, 3).map((tag) => (
-                            <span
-                              key={tag.id}
-                              className="inline-flex rounded-full border border-border px-2 py-0.5 text-[10px] font-medium"
-                              style={
-                                tag.color
-                                  ? {
-                                      backgroundColor: `${tag.color}20`,
-                                      borderColor: `${tag.color}40`,
-                                      color: tag.color,
-                                    }
-                                  : undefined
-                              }
-                            >
-                              {tag.name}
-                            </span>
-                          ))}
-                          {contactTags.length > 3 && (
-                            <span className="text-[10px] text-muted-foreground">
-                              +{contactTags.length - 3}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground/50">
-                          {t.noTags}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {contact.is_subscribed ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
-                          <CheckCircle className="h-3.5 w-3.5" />
-                          {t.yes}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
-                          <XCircle className="h-3.5 w-3.5" />
-                          {t.no}
-                        </span>
-                      )}
-                    </td>
+                      </td>
+                    )}
+                    {visibleColumns.includes("tags") && (
+                      <td
+                        className={cn(
+                          "py-3",
+                          visibleColumns[0] === "tags" ? "px-8" : "px-4"
+                        )}
+                      >
+                        {contactTags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {contactTags.slice(0, 3).map((tag) => (
+                              <span
+                                key={tag.id}
+                                className="inline-flex rounded-full border border-border px-2 py-0.5 text-[10px] font-medium"
+                                style={
+                                  tag.color
+                                    ? {
+                                        backgroundColor: `${tag.color}20`,
+                                        borderColor: `${tag.color}40`,
+                                        color: tag.color,
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {tag.name}
+                              </span>
+                            ))}
+                            {contactTags.length > 3 && (
+                              <span className="text-[10px] text-muted-foreground">
+                                +{contactTags.length - 3}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground/50">
+                            {t.noTags}
+                          </span>
+                        )}
+                      </td>
+                    )}
+                    {visibleColumns.includes("subscribed") && (
+                      <td
+                        className={cn(
+                          "py-3",
+                          visibleColumns[0] === "subscribed" ? "px-8" : "px-4"
+                        )}
+                      >
+                        {contact.is_subscribed ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
+                            <CheckCircle className="h-3.5 w-3.5" />
+                            {t.yes}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                            <XCircle className="h-3.5 w-3.5" />
+                            {t.no}
+                          </span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 );
               })}
