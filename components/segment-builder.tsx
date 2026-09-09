@@ -434,7 +434,13 @@ function FilterGroupCard({
             {idx > 0 && (
               <div className="flex items-center gap-2 py-1 pl-2">
                 <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                  {group.combinator}
+                  {group.combinator === "and"
+                    ? pt
+                      ? "E"
+                      : "AND"
+                    : pt
+                      ? "OU"
+                      : "OR"}
                 </span>
                 <div className="flex-1 border-t border-border" />
               </div>
@@ -552,7 +558,13 @@ export function SegmentBuilder({
             <div className="flex items-center gap-2 py-2">
               <div className="flex-1 border-t border-border" />
               <span className="text-[10px] font-semibold uppercase text-muted-foreground">
-                {value.combinator}
+                {value.combinator === "and"
+                  ? pt
+                    ? "E"
+                    : "AND"
+                  : pt
+                    ? "OU"
+                    : "OR"}
               </span>
               <div className="flex-1 border-t border-border" />
             </div>
