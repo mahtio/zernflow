@@ -476,7 +476,23 @@ async function handleCommentWebhook(
   }
 
   if (!(await claimWebhookEvent(supabase, eventId))) {
-    return NextResponse.json({ ok: true, skipped: true, reason: "duplicate_event" });
+    const { data: loggedComment } = await supabase
+      .from("comment_logs")
+      .select("dm_sent, error")
+      .eq("channel_id", channel.id)
+      .eq("platform_comment_id", comment.id)
+      .maybeSingle();
+
+    if (loggedComment?.dm_sent || (loggedComment && !loggedComment.error)) {
+      return NextResponse.json({ ok: true, skipped: true, reason: "duplicate_event" });
+    }
+
+    if (eventId) {
+      await supabase.from("webhook_events").delete().eq("event_id", eventId);
+      if (!(await claimWebhookEvent(supabase, eventId))) {
+        return NextResponse.json({ ok: true, skipped: true, reason: "duplicate_event" });
+      }
+    }
   }
 
   try {

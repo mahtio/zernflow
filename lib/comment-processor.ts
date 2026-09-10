@@ -102,13 +102,27 @@ export async function processComment({
 }): Promise<ProcessCommentResult> {
   const { data: alreadyLogged } = await supabase
     .from("comment_logs")
-    .select("id, error")
+    .select("id, matched_trigger_id, dm_sent, error")
     .eq("channel_id", channel.id)
     .eq("platform_comment_id", comment.id)
     .maybeSingle();
 
-  if (alreadyLogged?.error) {
-    await supabase.from("comment_logs").delete().eq("id", alreadyLogged.id);
+  if (alreadyLogged?.dm_sent) {
+    return { matched: true, dmSent: true, skipped: "already_processed" };
+  }
+  if (alreadyLogged?.matched_trigger_id || alreadyLogged?.error) {
+    const { error: deleteLogError } = await supabase
+      .from("comment_logs")
+      .delete()
+      .eq("id", alreadyLogged.id);
+    if (deleteLogError) {
+      return {
+        matched: true,
+        dmSent: false,
+        triggerId: alreadyLogged.matched_trigger_id || undefined,
+        error: `Failed to prepare comment retry: ${deleteLogError.message}`,
+      };
+    }
   } else if (alreadyLogged) {
     return { matched: false, skipped: "already_processed" };
   }
@@ -157,7 +171,12 @@ export async function processComment({
         .single();
 
       if (!newContact) {
-        return { matched: true, triggerId: matchedTrigger.id, error: "Failed to create contact" };
+        return {
+          matched: true,
+          dmSent: false,
+          triggerId: matchedTrigger.id,
+          error: "Failed to create contact",
+        };
       }
 
       contactId = newContact.id;
@@ -202,9 +221,9 @@ export async function processComment({
       }
     }
 
-    // Local conversation only — there is no Zernio DM conversation until the
-    // flow's privateReply node creates one, so late_conversation_id stays null
-    // and sendMessage nodes in comment flows are no-ops until the contact replies.
+    // Create the local conversation used to record the private reply. There is
+    // no Zernio DM conversation yet, so the first Send Message node is delivered
+    // through the comment private-reply endpoint.
     const { data: conversation } = await supabase
       .from("conversations")
       .upsert(
