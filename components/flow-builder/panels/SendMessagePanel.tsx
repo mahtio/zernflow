@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { Plus, X, GripVertical, Image, Type, MousePointer, MessageCircle, LayoutGrid, ExternalLink, GitBranch } from "lucide-react";
+import { Plus, X, GripVertical, Image, Type, MousePointer, MessageCircle, LayoutGrid, ExternalLink, GitBranch, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/components/locale-provider";
 import { createMessageOptionId } from "@/lib/flow-engine/message-options";
@@ -116,14 +116,15 @@ function VariablePicker({
         })}
       </div>
       {customFields.length > 0 && (
-        <div className="mt-3 border-t border-border pt-2">
-          <p className="mb-1 text-[11px] font-semibold text-muted-foreground">
+        <details className="group mt-3 border-t border-border pt-2">
+          <summary className="flex cursor-pointer list-none items-center justify-between rounded px-1.5 py-1 text-[11px] font-semibold text-muted-foreground hover:bg-muted [&::-webkit-details-marker]:hidden">
             {pt ? "Campos personalizados" : "Custom fields"}
-          </p>
-          <div className="flex flex-wrap gap-1.5">
+            <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="mt-1 flex flex-wrap gap-1.5">
             {customFields.map((field) => renderToken(`custom.${field.slug}`, field.name))}
           </div>
-        </div>
+        </details>
       )}
     </div>
   );
