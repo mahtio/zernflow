@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { Github } from "lucide-react";
 import { LanguageSelector } from "@/components/language-selector";
 import { useLocale } from "@/components/locale-provider";
 import { acceptInvite } from "@/lib/actions/team";
@@ -43,6 +44,23 @@ export function LoginForm({ invite }: { invite: InviteContext | null }) {
     router.refresh();
   }
 
+  async function handleGitHubLogin() {
+    setLoading(true);
+    setError(null);
+    const supabase = createClient();
+    const callback = invite
+      ? `/auth/callback?invite=${encodeURIComponent(invite.id)}`
+      : "/auth/callback";
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: { redirectTo: `${window.location.origin}${callback}` },
+    });
+    if (oauthError) {
+      setError(oauthError.message);
+      setLoading(false);
+    }
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center px-4">
       <div className="absolute right-4 top-4"><LanguageSelector className="w-48" /></div>
@@ -76,6 +94,14 @@ export function LoginForm({ invite }: { invite: InviteContext | null }) {
             {loading ? t.signingIn : t.signIn}
           </button>
         </form>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
+          <div className="relative flex justify-center text-xs uppercase"><span className="bg-background px-2 text-muted-foreground">{t.orContinueWith}</span></div>
+        </div>
+        <button onClick={handleGitHubLogin} disabled={loading} className="flex w-full items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium hover:bg-accent disabled:opacity-50">
+          <Github className="h-4 w-4" /> GitHub
+        </button>
       </div>
     </div>
   );
