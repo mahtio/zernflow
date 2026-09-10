@@ -7,9 +7,12 @@ import { useLocale } from "@/components/locale-provider";
 
 export interface SendMessageNodeProps {
   label?: string;
+  deliveryMode?: "standard" | "private_reply";
   messages?: Array<{
     text?: string;
     imageUrl?: string;
+    mediaUrl?: string;
+    privateReplyButton?: { title: string; type: string };
     quickReplies?: Array<{ title: string; payload: string }>;
     buttons?: Array<{ title: string; type: string; payload?: string; url?: string }>;
   }>;
@@ -19,11 +22,13 @@ export function SendMessageNode({ data, selected }: NodeProps) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
   const nodeData = data as SendMessageNodeProps;
-  const label = nodeData.label || (pt ? "Enviar mensagem" : "Send Message");
+  const isPrivateReply = nodeData.deliveryMode === "private_reply";
+  const label = nodeData.label || (isPrivateReply ? (pt ? "Resposta privada" : "Private reply") : (pt ? "Enviar mensagem" : "Send Message"));
   const firstMessage = nodeData.messages?.[0];
   const messageCount = nodeData.messages?.length || 0;
-  const buttonCount =
-    nodeData.messages?.reduce(
+  const buttonCount = isPrivateReply
+    ? (firstMessage?.privateReplyButton ? 1 : 0)
+    : nodeData.messages?.reduce(
       (acc, m) => acc + (m.buttons?.length || 0) + (m.quickReplies?.length || 0),
       0
     ) || 0;
@@ -42,10 +47,20 @@ export function SendMessageNode({ data, selected }: NodeProps) {
       />
       <div className="flex items-center gap-2 rounded-t-lg bg-blue-500 px-3 py-2 text-white">
         <MessageSquare className="h-3.5 w-3.5" />
-        <span className="text-xs font-semibold">{pt ? "Enviar mensagem" : "Send Message"}</span>
+        <span className="text-xs font-semibold">{isPrivateReply ? (pt ? "Resposta privada" : "Private reply") : (pt ? "Enviar mensagem" : "Send Message")}</span>
       </div>
       <div className="p-3">
+        {isPrivateReply && (
+          <span className="mb-2 inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-[9px] font-semibold text-blue-700">
+            {pt ? "Primeira mensagem do comentário" : "First comment message"}
+          </span>
+        )}
         <p className="text-sm font-medium">{label}</p>
+        {isPrivateReply && (
+          <p className="mt-1 text-[10px] leading-4 text-muted-foreground">
+            {pt ? "Uma resposta privada antes da interação do contato." : "One private reply before contact interaction."}
+          </p>
+        )}
         {firstMessage?.text && (
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
             {firstMessage.text}

@@ -222,6 +222,16 @@ async function failJobAndSettleSession({
     return;
   }
 
+  if (job.type === "expire_flow_session") {
+    const payload = job.payload as { sessionId?: string } | null;
+    if (!payload?.sessionId) return;
+    await supabase
+      .from("flow_sessions")
+      .update({ status: "cancelled", waiting_for_input: false, waiting_until: null })
+      .eq("id", payload.sessionId)
+      .eq("status", "active");
+    return;
+  }
   if (job.type !== "resume_flow") return;
   const payload = job.payload as { sessionId?: string; nodeId?: string } | null;
   const sessionId = payload?.sessionId;
@@ -370,6 +380,25 @@ async function processJob(
   job: { id: string; type: string; payload: Json }
 ) {
   switch (job.type) {
+    case "expire_flow_session": {
+      const payload = job.payload as {
+        sessionId: string;
+        nodeId: string;
+        expiresAt: string;
+      };
+      // Match every marker of this exact wait instance. A resumed session has
+      // already cleared waiting_for_input/waiting_until, so stale jobs no-op.
+      const { error } = await supabase
+        .from("flow_sessions")
+        .update({ status: "expired", waiting_for_input: false, waiting_until: null })
+        .eq("id", payload.sessionId)
+        .eq("status", "active")
+        .eq("waiting_for_input", true)
+        .eq("current_node_id", payload.nodeId)
+        .eq("waiting_until", payload.expiresAt);
+      if (error) throw new Error(`could not expire private reply session ${payload.sessionId}: ${error.message}`);
+      return;
+    }
     case "resume_flow": {
       const payload = job.payload as {
         sessionId: string;

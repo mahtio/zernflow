@@ -33,12 +33,20 @@ interface Message {
   imageUrl?: string;
   mediaUrl?: string;
   mediaType?: "image" | "video" | "audio";
+  privateReplyButton?: {
+    type: "postback" | "url";
+    title: string;
+    destinationUrl?: string;
+    payload?: string;
+  };
   quickReplies?: QuickReply[];
   buttons?: Button[];
   carousel?: Carousel;
 }
 
 interface SendMessagePanelData {
+  deliveryMode?: "standard" | "private_reply";
+  interactionTimeoutHours?: number;
   messages?: Message[];
   [key: string]: unknown;
 }
@@ -47,6 +55,7 @@ interface SendMessagePanelProps {
   data: Record<string, unknown>;
   onChange: (data: Record<string, unknown>) => void;
   availableVariables?: string[];
+  isCommentPrivateReply?: boolean;
 }
 
 function VariablePicker({
@@ -82,7 +91,7 @@ function VariablePicker({
   );
 }
 
-export function SendMessagePanel({ data: rawData, onChange, availableVariables }: SendMessagePanelProps) {
+export function SendMessagePanel({ data: rawData, onChange, availableVariables, isCommentPrivateReply }: SendMessagePanelProps) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
   const data = rawData as SendMessagePanelData;
@@ -107,6 +116,16 @@ export function SendMessagePanel({ data: rawData, onChange, availableVariables }
     },
     [data, messages, onChange]
   );
+
+  if (isCommentPrivateReply) {
+    return (
+      <PrivateReplyEditor
+        data={data}
+        onChange={onChange}
+        availableVariables={availableVariables || []}
+      />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -151,6 +170,114 @@ export function SendMessagePanel({ data: rawData, onChange, availableVariables }
               : "WhatsApp: Meta only accepts free-form messages within 24h of the contact's last message"}
           </li>
         </ul>
+      </div>
+    </div>
+  );
+}
+
+function PrivateReplyEditor({
+  data,
+  onChange,
+  availableVariables,
+}: {
+  data: SendMessagePanelData;
+  onChange: (data: Record<string, unknown>) => void;
+  availableVariables: string[];
+}) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const message = data.messages?.[0] || { text: "" };
+  const button = message.privateReplyButton || { type: "postback" as const, title: "Continuar" };
+  const update = (nextMessage: Message) => onChange({
+    ...data,
+    deliveryMode: "private_reply",
+    interactionTimeoutHours: 24,
+    messages: [nextMessage],
+  });
+  const insertVariable = (variable: string) => {
+    const token = `{{${variable}}}`;
+    const text = message.text || "";
+    const caret = textareaRef.current?.selectionStart ?? text.length;
+    update({ ...message, text: text.slice(0, caret) + token + text.slice(caret) });
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-100">
+        <p className="font-semibold">{pt ? "Primeira mensagem do comentário" : "First comment message"}</p>
+        <p className="mt-1">{pt
+          ? "O Instagram permite somente uma resposta privada antes da interação do contato."
+          : "Instagram allows only one private reply before the contact interacts."}</p>
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Texto da mensagem" : "Message text"}</label>
+        <textarea
+          ref={textareaRef}
+          value={message.text || ""}
+          onChange={(event) => update({ ...message, text: event.target.value })}
+          rows={4}
+          className="w-full resize-none rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          placeholder={pt ? "Digite a resposta privada..." : "Type the private reply..."}
+        />
+        <VariablePicker variables={availableVariables} onInsert={insertVariable} />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Imagem opcional por URL" : "Optional image URL"}</label>
+        <input
+          type="url"
+          value={message.mediaUrl || ""}
+          onChange={(event) => update({ ...message, mediaUrl: event.target.value || undefined, mediaType: event.target.value ? "image" : undefined })}
+          placeholder="https://example.com/image.jpg"
+          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+        <p className="mt-1 text-[11px] text-muted-foreground">{pt ? "A publicação avisará caso o canal não aceite imagem na resposta privada." : "Publishing will report if the channel does not support private-reply images."}</p>
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Texto do botão" : "Button text"}</label>
+        <input
+          type="text"
+          value={button.title}
+          maxLength={20}
+          onChange={(event) => update({ ...message, privateReplyButton: { ...button, title: event.target.value } })}
+          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        />
+      </div>
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Ação do botão" : "Button action"}</label>
+        <select
+          value={button.type}
+          onChange={(event) => update({
+            ...message,
+            privateReplyButton: {
+              type: event.target.value as "postback" | "url",
+              title: button.title,
+              destinationUrl: event.target.value === "url" ? button.destinationUrl : undefined,
+              payload: event.target.value === "postback" ? button.payload : undefined,
+            },
+          })}
+          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="postback">{pt ? "Continuar fluxo" : "Continue flow"}</option>
+          <option value="url">{pt ? "Abrir link" : "Open link"}</option>
+        </select>
+      </div>
+      {button.type === "url" && (
+        <div>
+          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "URL de destino" : "Destination URL"}</label>
+          <input
+            type="url"
+            value={button.destinationUrl || ""}
+            onChange={(event) => update({ ...message, privateReplyButton: { ...button, destinationUrl: event.target.value } })}
+            placeholder="https://example.com"
+            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+        </div>
+      )}
+      <div className="rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
+        {button.type === "postback"
+          ? (pt ? "O fluxo continuará quando o contato clicar neste botão ou responder à mensagem." : "The flow continues when the contact clicks this button or replies.")
+          : (pt ? "O link será aberto por um redirecionamento seguro. Se houver um próximo nó conectado, o clique também continuará o fluxo." : "The link opens through a secure redirect. If a next node is connected, the click also continues the flow.")}
       </div>
     </div>
   );

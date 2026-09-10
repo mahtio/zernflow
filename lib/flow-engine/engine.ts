@@ -21,6 +21,8 @@ import type {
 import { executeAiResponse } from "./nodes/ai-response";
 import { adaptMessage } from "./platform-adapter";
 import { createZernioClient } from "@/lib/zernio-client";
+import { createTrackedLinkToken, createTrackedLinkUrl } from "@/lib/tracked-link";
+import { createPrivateReplyPostbackPayload } from "./comment-private-reply";
 
 export async function executeFlow(
   supabase: SupabaseClient<Database>,
@@ -216,11 +218,25 @@ export async function resumeSession(
     context.variables.message = context.incomingMessage.text;
   }
 
-  // Update session
-  await supabase
-    .from("flow_sessions")
-    .update({ waiting_for_input: false, waiting_until: null })
-    .eq("id", session.id);
+  // Claim the exact waiting state atomically. Duplicate webhooks/link clicks see
+  // no returned row and cannot traverse the next node a second time.
+  if (session.waiting_for_input) {
+    const { data: claimed, error: claimError } = await supabase
+      .from("flow_sessions")
+      .update({ waiting_for_input: false, waiting_until: null })
+      .eq("id", session.id)
+      .eq("status", "active")
+      .eq("waiting_for_input", true)
+      .select("id")
+      .maybeSingle();
+    if (claimError) throw new FlowLoadError(`session ${session.id} could not be claimed: ${claimError.message}`);
+    if (!claimed) return;
+  } else {
+    await supabase
+      .from("flow_sessions")
+      .update({ waiting_until: null })
+      .eq("id", session.id);
+  }
 
   // Continue from current node
   const currentNode = nodes.find((n) => n.id === session.current_node_id);
@@ -301,8 +317,15 @@ async function traverseNodes(
     metadata: { nodeId: node.id, nodeType: node.type },
   });
 
-  // Execute the node
-  const result = await executeNode(supabase, node, context, sessionId);
+  // Execute the node. Private replies need graph context to avoid creating a
+  // pointless wait when the node has no continuation.
+  const result = await executeNode(
+    supabase,
+    node,
+    context,
+    sessionId,
+    edges.some((edge) => edge.source === node.id)
+  );
 
   // Persist variables written by output-producing nodes so they survive
   // pauses (resumeSession reloads them from the session row).
@@ -354,13 +377,14 @@ async function executeNode(
   supabase: SupabaseClient<Database>,
   node: FlowNode,
   context: FlowExecutionContext,
-  sessionId: string
+  sessionId: string,
+  hasNextNode: boolean
 ): Promise<string | void> {
   const nodeType = getExecutableNodeType(node);
 
   switch (nodeType) {
     case "sendMessage":
-      return executeSendMessage(supabase, node.data as SendMessageNodeData, context);
+      return executeSendMessage(supabase, node, context, sessionId, hasNextNode);
     case "condition":
       return executeCondition(supabase, node.data as ConditionNodeData, context);
     case "delay":
@@ -407,7 +431,10 @@ async function sendFirstMessageAsPrivateReply(
   zernio: ReturnType<typeof createZernioClient>,
   data: SendMessageNodeData,
   context: FlowExecutionContext,
-  lateAccountId: string
+  lateAccountId: string,
+  sessionId: string,
+  nodeId: string,
+  hasNextNode: boolean
 ) {
   const first = data.messages[0];
   if (!first) {
@@ -418,6 +445,22 @@ async function sendFirstMessageAsPrivateReply(
     adaptMessage(first, context.platform ?? "instagram").text,
     context.variables || {}
   );
+  const configuredButton = first.privateReplyButton || { type: "postback" as const, title: "Continuar" };
+  const button = configuredButton.type === "url"
+    ? {
+        type: "url" as const,
+        title: configuredButton.title,
+        url: createTrackedLinkUrl(createTrackedLinkToken({
+          sessionId,
+          nodeId,
+          destinationUrl: configuredButton.destinationUrl!,
+        })),
+      }
+    : {
+        type: "postback" as const,
+        title: configuredButton.title,
+        payload: createPrivateReplyPostbackPayload(context.flowId, nodeId),
+      };
 
   try {
     const response = await zernio.comments.sendPrivateReplyToComment({
@@ -425,7 +468,7 @@ async function sendFirstMessageAsPrivateReply(
         postId: String(context.variables!.post_id),
         commentId: String(context.variables!.comment_id),
       },
-      body: { accountId: lateAccountId, message: text },
+      body: { accountId: lateAccountId, message: text, buttons: [button] },
     });
 
     if (response.error) {
@@ -450,6 +493,14 @@ async function sendFirstMessageAsPrivateReply(
     if (context.variables) {
       context.variables.comment_dm_sent = "true";
     }
+    await supabase
+      .from("flow_sessions")
+      .update({ variables: (context.variables || {}) as Json })
+      .eq("id", sessionId);
+    if (hasNextNode) {
+      const expiresAt = new Date(Date.now() + (data.interactionTimeoutHours || 24) * 60 * 60 * 1000).toISOString();
+      await schedulePrivateReplyExpiration(supabase, sessionId, nodeId, expiresAt);
+    }
   } catch (error) {
     console.error("Failed to send comment-context message as private reply:", error);
     await supabase.from("messages").insert({
@@ -469,11 +520,33 @@ async function sendFirstMessageAsPrivateReply(
   }
 }
 
+async function schedulePrivateReplyExpiration(
+  supabase: SupabaseClient<Database>,
+  sessionId: string,
+  nodeId: string,
+  expiresAt: string
+) {
+  const { error: jobError } = await supabase.from("scheduled_jobs").insert({
+    type: "expire_flow_session",
+    payload: { sessionId, nodeId, expiresAt },
+    run_at: expiresAt,
+  });
+  if (jobError) throw new Error(`Could not schedule private reply expiration: ${jobError.message}`);
+  const { error: sessionError } = await supabase
+    .from("flow_sessions")
+    .update({ waiting_for_input: true, waiting_until: expiresAt, current_node_id: nodeId })
+    .eq("id", sessionId);
+  if (sessionError) throw new Error(`Could not pause private reply session: ${sessionError.message}`);
+}
+
 async function executeSendMessage(
   supabase: SupabaseClient<Database>,
-  data: SendMessageNodeData,
-  context: FlowExecutionContext
+  node: FlowNode,
+  context: FlowExecutionContext,
+  sessionId: string,
+  hasNextNode: boolean
 ) {
+  const data = node.data as SendMessageNodeData;
   // Get workspace for API key
   const { data: workspace } = await supabase
     .from("workspace_integration_credentials")
@@ -519,8 +592,17 @@ async function executeSendMessage(
         return;
       }
       if (context.variables?.comment_id && context.variables?.post_id && lateAccountId) {
-        await sendFirstMessageAsPrivateReply(supabase, zernio, data, context, lateAccountId);
-        return;
+        await sendFirstMessageAsPrivateReply(
+          supabase,
+          zernio,
+          data,
+          context,
+          lateAccountId,
+          sessionId,
+          node.id,
+          hasNextNode
+        );
+        return hasNextNode ? "pause" : undefined;
       }
       console.error("No late_conversation_id found for conversation:", context.conversationId);
       return;

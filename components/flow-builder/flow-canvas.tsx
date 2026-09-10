@@ -19,12 +19,14 @@ import "@xyflow/react/dist/style.css";
 
 import { useCallback, useRef, useState, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Save, Rocket, Loader2, History, Play, Download, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Save, Rocket, Loader2, History, Play, Download, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useLocale } from "@/components/locale-provider";
 import { createClient } from "@/lib/supabase/client";
 import type { Database, FlowStatus, Json } from "@/lib/types/database";
+import type { FlowEdge, FlowNode } from "@/lib/flow-engine/types";
+import { normalizeCommentPrivateReplies } from "@/lib/flow-engine/comment-private-reply";
 
 import { NodePalette } from "./node-palette";
 import { TriggerNode } from "./nodes/trigger-node";
@@ -91,12 +93,18 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
   const { screenToFlowPosition } = useReactFlow();
   const supabase = createClient();
 
-  const initialNodes: Node[] = Array.isArray(flow.nodes)
+  const rawInitialNodes: Node[] = Array.isArray(flow.nodes)
     ? (flow.nodes as unknown as Node[])
     : [];
   const initialEdges: Edge[] = Array.isArray(flow.edges)
     ? (flow.edges as unknown as Edge[])
     : [];
+  const initialNormalization = normalizeCommentPrivateReplies(
+    rawInitialNodes as unknown as FlowNode[],
+    initialEdges as unknown as FlowEdge[],
+    flow.id
+  );
+  const initialNodes = initialNormalization.nodes as unknown as Node[];
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -108,6 +116,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
   const [versionPanelOpen, setVersionPanelOpen] = useState(false);
   const [testPanelOpen, setTestPanelOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [migrationNotice, setMigrationNotice] = useState(initialNormalization.changed);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [availableCustomFields, setAvailableCustomFields] = useState(customFields);
@@ -129,18 +138,43 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
 
   const onConnect = useCallback(
     (connection: Connection) => {
-      setEdges((eds) =>
+      const source = nodes.find((node) => node.id === connection.source);
+      const target = nodes.find((node) => node.id === connection.target);
+      const sourceIsCommentTrigger = source?.type === "trigger" && source.data.triggerType === "comment_keyword";
+      if (sourceIsCommentTrigger && target?.type !== "sendMessage") {
+        setSaveError(pt
+          ? "A primeira saída de um gatilho de comentário deve ser Enviar mensagem."
+          : "A comment trigger must connect first to a Send Message node.");
+        setTimeout(() => setSaveError(null), 4000);
+        return;
+      }
+      if (sourceIsCommentTrigger && edges.some((edge) => edge.source === source.id)) {
+        setSaveError(pt
+          ? "O gatilho de comentário aceita somente uma saída."
+          : "A comment trigger accepts only one output.");
+        setTimeout(() => setSaveError(null), 4000);
+        return;
+      }
+      if (sourceIsCommentTrigger && target) {
+        const normalized = normalizeCommentPrivateReplies(
+          nodes as unknown as FlowNode[],
+          [...edges, { id: "pending", source: source.id, target: target.id }] as unknown as FlowEdge[],
+          flow.id
+        );
+        setNodes(normalized.nodes as unknown as Node[]);
+      }
+      setEdges((current) =>
         addEdge(
           {
             ...connection,
             animated: true,
             style: { stroke: "var(--border)", strokeWidth: 2 },
           },
-          eds
+          current
         )
       );
     },
-    [setEdges]
+    [edges, flow.id, nodes, pt, setEdges, setNodes]
   );
 
   const onDragOver = useCallback((event: DragEvent) => {
@@ -289,19 +323,22 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
       const res = await fetch(`/api/v1/flows/${flow.id}/publish`, {
         method: "POST",
       });
+      const result = await res.json().catch(() => null) as { error?: string; nodes?: Node[] } | null;
       if (!res.ok) {
-        console.error("Failed to publish flow");
-        setSaveError("Failed to publish");
-        setTimeout(() => setSaveError(null), 3000);
+        const message = result?.error || (pt ? "Falha ao publicar" : "Failed to publish");
+        console.error("Failed to publish flow:", message);
+        setSaveError(message);
+        setTimeout(() => setSaveError(null), 7000);
         return;
       }
+      if (Array.isArray(result?.nodes)) setNodes(result.nodes);
       setSaveError(null);
       setLastSaved(new Date());
       router.refresh();
     } finally {
       setPublishing(false);
     }
-  }, [saveFlow, flow.id]);
+  }, [saveFlow, flow.id, pt, router, setNodes]);
 
   return (
     <div className="flex h-full flex-col">
@@ -459,6 +496,20 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
           />
         </div>
       </div>
+
+      {migrationNotice && (
+        <div className="flex items-center justify-between border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-100">
+          <span className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            {pt
+              ? "Este fluxo foi ajustado às regras do Instagram: a primeira mensagem após o comentário agora é uma resposta privada com um único botão."
+              : "This flow was adjusted to Instagram rules: the first comment message is now a private reply with one button."}
+          </span>
+          <button type="button" onClick={() => setMigrationNotice(false)} className="font-medium underline">
+            {pt ? "Entendi" : "Dismiss"}
+          </button>
+        </div>
+      )}
 
       {/* Canvas area */}
       <div className="flex flex-1 overflow-hidden">

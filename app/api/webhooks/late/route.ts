@@ -6,6 +6,7 @@ import { executeFlow } from "@/lib/flow-engine/engine";
 import { messagePreview } from "@/lib/message-preview";
 import { upsertContactForSender } from "@/lib/inbox-sync";
 import { processComment } from "@/lib/comment-processor";
+import { resumeWaitingSession } from "@/lib/flow-engine/engine";
 import type { Database } from "@/lib/types/database";
 
 interface WebhookPayload {
@@ -351,6 +352,21 @@ async function runFlowExecution(
     },
   };
 
+  const flowContext = {
+    triggerId: "",
+    flowId: "",
+    channelId: channel.id,
+    contactId,
+    conversationId: conversation.id,
+    workspaceId: channel.workspace_id,
+    incomingMessage,
+    lateConversationId: conv.id,
+  };
+
+  // A reply or postback belongs to the active private-reply wait before it can
+  // be interpreted as a global keyword or a fresh flow trigger.
+  if (await resumeWaitingSession(supabase, flowContext)) return;
+
   const handled = await handleGlobalKeywords(
     supabase,
     channel.workspace_id,
@@ -359,17 +375,6 @@ async function runFlowExecution(
   );
 
   if (!handled) {
-    const flowContext = {
-      triggerId: "",
-      flowId: "",
-      channelId: channel.id,
-      contactId,
-      conversationId: conversation.id,
-      workspaceId: channel.workspace_id,
-      incomingMessage,
-      lateConversationId: conv.id,
-    };
-
     let triggerType = "message_received";
     if (metadata?.quickReplyPayload || metadata?.postbackPayload) {
       triggerType = "button_clicked";

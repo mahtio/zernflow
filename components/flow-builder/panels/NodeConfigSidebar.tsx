@@ -5,6 +5,8 @@ import { X, Trash2, Zap, MessageSquare, GitBranch, Clock, Cog, Sparkles } from "
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/components/locale-provider";
 import type { Edge, Node } from "@xyflow/react";
+import { getCommentPrivateReplyNodeIds } from "@/lib/flow-engine/comment-private-reply";
+import type { FlowEdge, FlowNode } from "@/lib/flow-engine/types";
 
 import { TriggerPanel } from "./TriggerPanel";
 import { SendMessagePanel } from "./SendMessagePanel";
@@ -138,7 +140,13 @@ export function NodeConfigSidebar({
   const nodeType = node.type || "action";
   const config = nodeTypeConfig[nodeType] || nodeTypeConfig.action;
   const translatedLabels: Record<string, string> = { trigger: "Gatilho", sendMessage: "Enviar mensagem", condition: "Condição", delay: "Atraso", aiResponse: "Resposta com IA", action: "Ação" };
-  const configLabel = pt ? translatedLabels[nodeType] ?? "Ação" : config.label;
+  const isCommentPrivateReply = getCommentPrivateReplyNodeIds(
+    nodes as unknown as FlowNode[],
+    edges as unknown as FlowEdge[]
+  ).has(node.id);
+  const configLabel = isCommentPrivateReply
+    ? (pt ? "Resposta privada" : "Private reply")
+    : pt ? translatedLabels[nodeType] ?? "Ação" : config.label;
   const Icon = config.icon;
 
   // Close on Escape
@@ -177,6 +185,7 @@ export function NodeConfigSidebar({
             data={data}
             onChange={handleChange}
             availableVariables={getFlowVariables({ node, nodes, edges })}
+            isCommentPrivateReply={isCommentPrivateReply}
           />
         );
       case "condition":
