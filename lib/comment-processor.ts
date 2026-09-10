@@ -25,11 +25,7 @@ interface CommentKeywordConfig {
 }
 
 function normalizeCommentText(value: string): string {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/\b0+(\d+)(?=[/.]\d)/g, "$1")
-    .replace(/([/.])0+(\d+)\b/g, "$1$2");
+  return value.toLowerCase().trim();
 }
 
 /**
@@ -82,6 +78,7 @@ export async function getActiveCommentTriggers(
 
 export interface ProcessCommentResult {
   matched: boolean;
+  dmSent?: boolean;
   skipped?: "already_processed";
   triggerId?: string;
   error?: string;
@@ -105,12 +102,16 @@ export async function processComment({
 }): Promise<ProcessCommentResult> {
   const { data: alreadyLogged } = await supabase
     .from("comment_logs")
-    .select("id")
+    .select("id, error")
     .eq("channel_id", channel.id)
     .eq("platform_comment_id", comment.id)
     .maybeSingle();
 
-  if (alreadyLogged) return { matched: false, skipped: "already_processed" };
+  if (alreadyLogged?.error) {
+    await supabase.from("comment_logs").delete().eq("id", alreadyLogged.id);
+  } else if (alreadyLogged) {
+    return { matched: false, skipped: "already_processed" };
+  }
 
   const triggers = await getActiveCommentTriggers(supabase, {
     channelId: channel.id,
@@ -221,37 +222,37 @@ export async function processComment({
       .select("id")
       .single();
 
-    let dmSent = false;
-    if (conversation) {
-      try {
-        await executeFlow(supabase, {
-          triggerId: matchedTrigger.id,
-          flowId: matchedTrigger.flow_id,
-          channelId: channel.id,
-          contactId,
-          conversationId: conversation.id,
-          workspaceId: channel.workspace_id,
-          lateAccountId: channel.late_account_id,
-          incomingMessage: {
-            text: comment.text,
-            sender: {
-              id: senderId,
-              name: comment.author.name,
-              username: comment.author.username,
-            },
-          },
-          variables: {
-            comment_id: comment.id,
-            comment_text: comment.text,
-            commenter_name: senderName,
-            post_id: comment.postId,
-          },
-        });
-        dmSent = true;
-      } catch (err) {
-        console.error("Failed to execute comment flow:", err);
-      }
+    if (!conversation) {
+      throw new Error("Failed to create conversation for comment flow");
     }
+
+    const variables = {
+      comment_id: comment.id,
+      comment_text: comment.text,
+      commenter_name: senderName,
+      post_id: comment.postId,
+      comment_dm_sent: "false",
+    };
+
+    await executeFlow(supabase, {
+      triggerId: matchedTrigger.id,
+      flowId: matchedTrigger.flow_id,
+      channelId: channel.id,
+      contactId,
+      conversationId: conversation.id,
+      workspaceId: channel.workspace_id,
+      lateAccountId: channel.late_account_id,
+      incomingMessage: {
+        text: comment.text,
+        sender: {
+          id: senderId,
+          name: comment.author.name,
+          username: comment.author.username,
+        },
+      },
+      variables,
+    });
+    const dmSent = variables.comment_dm_sent === "true";
 
     await supabase.from("analytics_events").insert({
       workspace_id: channel.workspace_id,
@@ -276,7 +277,7 @@ export async function processComment({
       replySent,
     });
 
-    return { matched: true, triggerId: matchedTrigger.id };
+    return { matched: true, dmSent, triggerId: matchedTrigger.id };
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
     await logComment({
@@ -286,7 +287,7 @@ export async function processComment({
       triggerId: matchedTrigger.id,
       error: errorMessage,
     });
-    return { matched: true, triggerId: matchedTrigger.id, error: errorMessage };
+    return { matched: true, dmSent: false, triggerId: matchedTrigger.id, error: errorMessage };
   }
 }
 

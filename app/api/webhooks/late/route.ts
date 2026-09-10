@@ -53,26 +53,35 @@ interface WebhookPayload {
 }
 
 interface CommentWebhookPayload {
-  id?: string;
+  id: string;
   event: "comment.received";
   comment: {
     id: string;
+    postId: string | null;
+    platformPostId: string;
+    platform: string;
     text: string;
-    mediaId: string;
-    mediaUrl?: string;
-    sender: {
+    author: {
       id: string;
-      username: string;
+      username?: string;
       name?: string;
       picture?: string | null;
     };
     createdAt: string;
-    parentId?: string;
+    isReply: boolean;
+    parentCommentId: string | null;
+  };
+  post?: {
+    id: string | null;
+    platformPostId: string;
   };
   account: {
     id: string;
+    accountId?: string;
     platform: string;
+    username: string;
   };
+  timestamp: string;
 }
 
 function parseIsoDate(value: unknown): string {
@@ -449,10 +458,11 @@ async function handleCommentWebhook(
   const { comment, account } = payload;
   const supabase = await createServiceClient();
 
+  const accountId = account.accountId || account.id;
   const { data: channel } = await supabase
     .from("channels")
     .select("*")
-    .eq("late_account_id", account.id)
+    .eq("late_account_id", accountId)
     .eq("is_active", true)
     .single();
 
@@ -469,15 +479,27 @@ async function handleCommentWebhook(
     return NextResponse.json({ ok: true, skipped: true, reason: "duplicate_event" });
   }
 
-  after(async () => {
-    try {
-      await processCommentEvent(supabase, payload, channel);
-    } catch (err) {
-      console.error("Webhook comment processing error:", err);
+  try {
+    const result = await processCommentEvent(supabase, payload, channel);
+    if (result.error || (result.matched && result.dmSent !== true)) {
+      if (eventId) {
+        await supabase.from("webhook_events").delete().eq("event_id", eventId);
+      }
+      const error = result.error || "Comment flow completed without sending a DM";
+      console.error("Comment automation failed:", error);
+      return NextResponse.json({ error }, { status: 500 });
     }
-  });
-
-  return NextResponse.json({ ok: true, queued: true });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    if (eventId) {
+      await supabase.from("webhook_events").delete().eq("event_id", eventId);
+    }
+    console.error("Webhook comment processing error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Comment processing failed" },
+      { status: 500 }
+    );
+  }
 }
 
 async function processCommentEvent(
@@ -485,23 +507,24 @@ async function processCommentEvent(
   payload: CommentWebhookPayload,
   channel: Database["public"]["Tables"]["channels"]["Row"]
 ) {
-  const { comment } = payload;
-  const result = await processComment({
+  const { comment, post } = payload;
+  const platformPostId = comment.platformPostId || post?.platformPostId;
+  if (!platformPostId) {
+    return { matched: false, error: "Comment payload is missing platformPostId" };
+  }
+
+  return processComment({
     supabase,
     channel,
     comment: {
       id: comment.id,
-      postId: comment.mediaId,
-      text: comment.text,
+      postId: platformPostId,
+      text: String(comment.text ?? ""),
       author: {
-        id: comment.sender.id,
-        name: comment.sender.name,
-        username: comment.sender.username,
+        id: comment.author.id,
+        name: comment.author.name,
+        username: comment.author.username,
       },
     },
   });
-
-  if (result.error) {
-    console.error("Comment automation failed:", result.error);
-  }
 }

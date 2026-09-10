@@ -410,7 +410,9 @@ async function sendFirstMessageAsPrivateReply(
   lateAccountId: string
 ) {
   const first = data.messages[0];
-  if (!first) return;
+  if (!first) {
+    throw new Error("Comment flow message node has no message configured");
+  }
 
   const text = interpolateVariables(
     adaptMessage(first, context.platform ?? "instagram").text,
@@ -418,7 +420,7 @@ async function sendFirstMessageAsPrivateReply(
   );
 
   try {
-    await zernio.comments.sendPrivateReplyToComment({
+    const response = await zernio.comments.sendPrivateReplyToComment({
       path: {
         postId: String(context.variables!.post_id),
         commentId: String(context.variables!.comment_id),
@@ -426,11 +428,16 @@ async function sendFirstMessageAsPrivateReply(
       body: { accountId: lateAccountId, message: text },
     });
 
+    if (response.error) {
+      throw new Error(`Zernio private reply failed: ${JSON.stringify(response.error)}`);
+    }
+
     await supabase.from("messages").insert({
       conversation_id: context.conversationId,
       direction: "outbound",
       text,
       sent_by_flow_id: context.flowId,
+      platform_message_id: response.data?.messageId || null,
       status: "sent",
     });
 
@@ -440,6 +447,9 @@ async function sendFirstMessageAsPrivateReply(
       contact_id: context.contactId,
       event_type: "message_sent",
     });
+    if (context.variables) {
+      context.variables.comment_dm_sent = "true";
+    }
   } catch (error) {
     console.error("Failed to send comment-context message as private reply:", error);
     await supabase.from("messages").insert({
@@ -449,7 +459,7 @@ async function sendFirstMessageAsPrivateReply(
       sent_by_flow_id: context.flowId,
       status: "failed",
     });
-    return;
+    throw error;
   }
 
   if (data.messages.length > 1) {
@@ -502,9 +512,12 @@ async function executeSendMessage(
 
     if (!conversation?.late_conversation_id) {
       // Comment-triggered flows have no DM conversation yet. Instagram allows
-      // exactly one private reply per comment, so deliver the first message via
-      // the private-reply endpoint instead of silently dropping the whole node
-      // (users build comment flows with plain Send Message nodes, not Private Reply).
+      // exactly one private reply per comment. After that first private reply,
+      // further Send Message nodes must wait for the recipient to answer and
+      // create a regular DM conversation instead of retrying the same comment.
+      if (context.variables?.comment_dm_sent === "true") {
+        return;
+      }
       if (context.variables?.comment_id && context.variables?.post_id && lateAccountId) {
         await sendFirstMessageAsPrivateReply(supabase, zernio, data, context, lateAccountId);
         return;
@@ -1087,22 +1100,27 @@ async function executePrivateReply(
     lateAccountId = channel.late_account_id;
   }
 
-  const commentId = context.variables?.comment_id || context.incomingMessage.sender?.id;
-  if (!commentId) return;
+  const commentId = context.variables?.comment_id;
+  if (!commentId) {
+    throw new Error("No comment_id in context variables for privateReply node");
+  }
 
   const postId = context.variables?.post_id;
   if (!postId) {
-    console.error("No post_id in context variables for privateReply node");
-    return;
+    throw new Error("No post_id in context variables for privateReply node");
   }
 
   const text = interpolateVariables(data.text, context.variables || {});
 
   try {
-    await zernio.comments.sendPrivateReplyToComment({
+    const response = await zernio.comments.sendPrivateReplyToComment({
       path: { postId, commentId },
       body: { accountId: lateAccountId, message: text },
     });
+
+    if (response.error) {
+      throw new Error(`Zernio private reply failed: ${JSON.stringify(response.error)}`);
+    }
 
     await supabase.from("messages").insert({
       conversation_id: context.conversationId,
@@ -1112,8 +1130,12 @@ async function executePrivateReply(
         ? [{ type: "image", url: data.imageUrl }]
         : null,
       sent_by_flow_id: context.flowId,
+      platform_message_id: response.data?.messageId || null,
       status: "sent",
     });
+    if (context.variables) {
+      context.variables.comment_dm_sent = "true";
+    }
   } catch (error) {
     console.error("Failed to send private reply:", error);
     await supabase.from("messages").insert({
@@ -1123,6 +1145,7 @@ async function executePrivateReply(
       sent_by_flow_id: context.flowId,
       status: "failed",
     });
+    throw error;
   }
 }
 

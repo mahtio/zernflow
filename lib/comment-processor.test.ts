@@ -40,9 +40,15 @@ describe("matchCommentTrigger", () => {
     expect(matchCommentTrigger([t], comment("more info"))).toBeNull();
   });
 
-  it("treats zero-padded dates as equivalent", () => {
-    const t = trigger("t1", { keywords: [{ value: "Portal 09/09" }] });
-    expect(matchCommentTrigger([t], comment("Portal 9/9"))?.id).toBe("t1");
+  it("treats slash-separated numeric comments as literal text", () => {
+    const t = trigger("t1", { keywords: [{ value: "09/09", matchType: "exact" }] });
+    expect(matchCommentTrigger([t], comment("09/09"))?.id).toBe("t1");
+    expect(matchCommentTrigger([t], comment("9/9"))).toBeNull();
+  });
+
+  it("matches 09/09 inside comment text when configured as contains", () => {
+    const t = trigger("t1", { keywords: [{ value: "09/09", matchType: "contains" }] });
+    expect(matchCommentTrigger([t], comment("Quero o portal 09/09, por favor"))?.id).toBe("t1");
   });
 
   it("returns the first matching trigger in array order (caller pre-sorts by priority)", () => {
