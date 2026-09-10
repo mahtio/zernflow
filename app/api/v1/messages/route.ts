@@ -84,7 +84,7 @@ export async function GET(request: NextRequest) {
   // 2. Fetch conversation details to check if synchronization is needed
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("last_message_at, late_conversation_id, workspace_id, channels(late_account_id)")
+    .select("last_message_at, late_conversation_id, workspace_id, channel_id, channels(late_account_id)")
     .eq("id", conversationId)
     .single();
 
@@ -100,7 +100,7 @@ export async function GET(request: NextRequest) {
   if (!needsSync && conversation.last_message_at && messagesList.length > 0) {
     const latestLocalTime = new Date(messagesList[messagesList.length - 1].created_at).getTime();
     const convLastMessageTime = new Date(conversation.last_message_at).getTime();
-    if (convLastMessageTime - latestLocalTime > 2000) {
+    if (convLastMessageTime - latestLocalTime > 1500) {
       needsSync = true;
     }
   }
@@ -116,8 +116,13 @@ export async function GET(request: NextRequest) {
     .eq("id", conversation.workspace_id)
     .single();
 
-  const channel = conversation.channels as { late_account_id: string } | null;
-  if (!workspace?.late_api_key_encrypted || !channel?.late_account_id) {
+  const rawChannels = conversation.channels as unknown;
+  const lateAccountId: string | null =
+    (rawChannels as { late_account_id?: string })?.late_account_id ??
+    (Array.isArray(rawChannels) ? (rawChannels[0] as { late_account_id?: string })?.late_account_id : null) ??
+    null;
+
+  if (!workspace?.late_api_key_encrypted || !lateAccountId) {
     return NextResponse.json(messagesList);
   }
 
@@ -125,7 +130,7 @@ export async function GET(request: NextRequest) {
     const zernio = createZernioClient(workspace.late_api_key_encrypted);
     const res = await zernio.messages.getInboxConversationMessages({
       path: { conversationId: conversation.late_conversation_id },
-      query: { accountId: channel.late_account_id, limit: 100, sortOrder: "asc" },
+      query: { accountId: lateAccountId, limit: 100, sortOrder: "asc" },
     });
 
     const zernioMessages =
@@ -279,8 +284,13 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const channel = conversation.channels as { late_account_id: string } | null;
-  if (!channel?.late_account_id) {
+  const rawChannel = conversation.channels as unknown;
+  const lateAccountId: string | null =
+    (rawChannel as { late_account_id?: string })?.late_account_id ??
+    (Array.isArray(rawChannel) ? (rawChannel[0] as { late_account_id?: string })?.late_account_id : null) ??
+    null;
+
+  if (!lateAccountId) {
     return NextResponse.json({ error: "Channel not found or missing Zernio account ID" }, { status: 404 });
   }
 
@@ -328,7 +338,7 @@ export async function POST(request: NextRequest) {
         path: { conversationId: conversation.late_conversation_id },
         headers: { "Idempotency-Key": crypto.randomUUID() },
         body: {
-          accountId: channel.late_account_id,
+          accountId: lateAccountId,
           message: text || undefined,
           attachmentUrl: uploadData.url,
           attachmentType: fileKind,
@@ -351,7 +361,7 @@ export async function POST(request: NextRequest) {
       const response = await zernio.messages.sendInboxMessage({
         path: { conversationId: conversation.late_conversation_id },
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: { accountId: channel.late_account_id, message: text },
+        body: { accountId: lateAccountId, message: text },
       });
       responseData = response.data as { data?: { messageId?: string } };
     }
