@@ -38,12 +38,22 @@ function attachmentType(file: File): "image" | "video" | "audio" | "file" {
   return "file";
 }
 
+function parseIsoDate(value: unknown): string {
+  if (!value) return new Date().toISOString();
+  try {
+    const d = new Date(value as string | number);
+    if (isNaN(d.getTime())) return new Date().toISOString();
+    return d.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
 /**
  * GET /api/v1/messages?conversationId=...
  *
- * Reads messages directly from local Supabase database for instant 0ms latency.
- * If local database has no messages yet for this conversation, performs an
- * on-demand backfill from Zernio and saves them to Supabase.
+ * Reads messages from local Supabase database. If local database is missing recent
+ * messages (or is empty), synchronizes missing messages from Zernio and persists them locally.
  */
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -53,11 +63,12 @@ export async function GET(request: NextRequest) {
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const conversationId = request.nextUrl.searchParams.get("conversationId");
+  const forceSync = request.nextUrl.searchParams.get("sync") === "true";
   if (!conversationId) {
     return NextResponse.json({ error: "conversationId required" }, { status: 400 });
   }
 
-  // 1. Primary query: fetch from local Supabase messages table
+  // 1. Fetch from local Supabase messages table
   const { data: localMessages, error: localError } = await supabase
     .from("messages")
     .select("*")
@@ -68,38 +79,48 @@ export async function GET(request: NextRequest) {
     console.error("Failed to fetch local messages:", localError);
   }
 
-  // If we already have local messages, return them immediately
-  if (localMessages && localMessages.length > 0) {
-    return NextResponse.json(localMessages);
-  }
+  const messagesList = localMessages ?? [];
 
-  // 2. Fallback / Backfill: look up conversation in Zernio if local is empty
+  // 2. Fetch conversation details to check if synchronization is needed
   const { data: conversation } = await supabase
     .from("conversations")
-    .select("late_conversation_id, workspace_id, channels(late_account_id)")
+    .select("last_message_at, late_conversation_id, workspace_id, channels(late_account_id)")
     .eq("id", conversationId)
     .single();
 
   if (!conversation?.late_conversation_id) {
-    return NextResponse.json(localMessages ?? []);
+    return NextResponse.json(messagesList);
   }
 
+  // Determine if we need to sync with Zernio:
+  // - If we have 0 local messages
+  // - If forceSync is requested
+  // - If conversation.last_message_at is newer than our latest local message created_at
+  let needsSync = messagesList.length === 0 || forceSync;
+  if (!needsSync && conversation.last_message_at && messagesList.length > 0) {
+    const latestLocalTime = new Date(messagesList[messagesList.length - 1].created_at).getTime();
+    const convLastMessageTime = new Date(conversation.last_message_at).getTime();
+    if (convLastMessageTime - latestLocalTime > 2000) {
+      needsSync = true;
+    }
+  }
+
+  if (!needsSync) {
+    return NextResponse.json(messagesList);
+  }
+
+  // 3. Fetch from Zernio and import missing messages
   const { data: workspace } = await supabase
     .from("workspaces")
     .select("late_api_key_encrypted")
     .eq("id", conversation.workspace_id)
     .single();
 
-  if (!workspace?.late_api_key_encrypted) {
-    return NextResponse.json(localMessages ?? []);
-  }
-
   const channel = conversation.channels as { late_account_id: string } | null;
-  if (!channel?.late_account_id) {
-    return NextResponse.json(localMessages ?? []);
+  if (!workspace?.late_api_key_encrypted || !channel?.late_account_id) {
+    return NextResponse.json(messagesList);
   }
 
-  // Fetch messages from Zernio API for backfill
   try {
     const zernio = createZernioClient(workspace.late_api_key_encrypted);
     const res = await zernio.messages.getInboxConversationMessages({
@@ -113,11 +134,27 @@ export async function GET(request: NextRequest) {
       [];
 
     if (!zernioMessages.length) {
-      return NextResponse.json([]);
+      return NextResponse.json(messagesList);
     }
 
-    // Map Zernio messages to Supabase rows
-    const rowsToInsert = zernioMessages.map((m: any, idx: number) => {
+    // Identify already-stored messages by platform_message_id and text/timestamp
+    const knownPlatformIds = new Set<string>();
+    for (const m of messagesList) {
+      if (m.platform_message_id) {
+        knownPlatformIds.add(m.platform_message_id);
+      }
+    }
+
+    const missingRowsToInsert: any[] = [];
+
+    for (let idx = 0; idx < zernioMessages.length; idx++) {
+      const m: any = zernioMessages[idx];
+      const platformMsgId = m.platformMessageId ?? m.id ?? null;
+
+      if (platformMsgId && knownPlatformIds.has(platformMsgId)) {
+        continue;
+      }
+
       const formattedAttachments = Array.isArray(m.attachments) && m.attachments.length > 0
         ? m.attachments.map((att: ZernioAttachment, attIdx: number) => ({
             id: att.id ?? `att-${idx}-${attIdx}-${Date.now()}`,
@@ -128,40 +165,54 @@ export async function GET(request: NextRequest) {
           }))
         : null;
 
-      return {
+      const direction = (m.direction === "outgoing" || m.direction === "outbound"
+        ? "outbound"
+        : "inbound") as "inbound" | "outbound";
+
+      const createdAt = parseIsoDate(m.sentAt ?? m.createdAt ?? m.timestamp);
+
+      missingRowsToInsert.push({
         conversation_id: conversationId,
-        direction: (m.direction === "outgoing" || m.direction === "outbound"
-          ? "outbound"
-          : "inbound") as "inbound" | "outbound",
+        direction,
         text: m.text ?? m.message ?? null,
         attachments: formattedAttachments,
         quick_reply_payload: null,
         postback_payload: null,
         callback_data: null,
-        platform_message_id: m.platformMessageId ?? m.id ?? null,
+        platform_message_id: platformMsgId,
         sent_by_flow_id: null,
         sent_by_node_id: null,
         sent_by_user_id: null,
         status: "sent" as const,
-        created_at: m.sentAt ?? m.createdAt ?? new Date().toISOString(),
-      };
-    });
+        created_at: createdAt,
+      });
 
-    // Bulk insert backfilled messages into Supabase
-    const { data: insertedMessages, error: insertError } = await supabase
-      .from("messages")
-      .insert(rowsToInsert)
-      .select();
-
-    if (insertError) {
-      console.error("Backfill insert error:", insertError);
-      return NextResponse.json(rowsToInsert);
+      if (platformMsgId) {
+        knownPlatformIds.add(platformMsgId);
+      }
     }
 
-    return NextResponse.json(insertedMessages ?? rowsToInsert);
+    if (missingRowsToInsert.length > 0) {
+      const { data: inserted, error: insertErr } = await supabase
+        .from("messages")
+        .insert(missingRowsToInsert)
+        .select();
+
+      if (insertErr) {
+        console.error("Error inserting synced messages from Zernio:", insertErr);
+      } else if (inserted) {
+        // Return full combined list ordered by created_at
+        const allMessages = [...messagesList, ...inserted].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        return NextResponse.json(allMessages);
+      }
+    }
+
+    return NextResponse.json(messagesList);
   } catch (error) {
-    console.error("Failed to backfill messages from Zernio API:", error);
-    return NextResponse.json(localMessages ?? []);
+    console.error("Failed to sync messages from Zernio API:", error);
+    return NextResponse.json(messagesList);
   }
 }
 

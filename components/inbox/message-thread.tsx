@@ -488,8 +488,23 @@ export function MessageThread({
           table: "conversations",
           filter: `id=eq.${conversationId}`,
         },
-        () => {
-          // Conversation metadata changed (e.g. status, unread_count)
+        async () => {
+          try {
+            const res = await fetch(`/api/v1/messages?conversationId=${conversationId}`);
+            if (res.ok) {
+              const fresh = await res.json();
+              if (Array.isArray(fresh)) {
+                setMessages((prev) => {
+                  const optimistic = prev.filter((m) => m.id.startsWith("optimistic-"));
+                  const knownIds = new Set(fresh.map((m: Message) => m.id));
+                  const remainingOptimistic = optimistic.filter((m) => !knownIds.has(m.id));
+                  return [...fresh, ...remainingOptimistic];
+                });
+              }
+            }
+          } catch (err) {
+            console.error("Failed to sync on conversation update:", err);
+          }
         }
       )
       .subscribe();

@@ -75,6 +75,17 @@ interface CommentWebhookPayload {
   timestamp: string;
 }
 
+function parseIsoDate(value: unknown): string {
+  if (!value) return new Date().toISOString();
+  try {
+    const d = new Date(value as string | number);
+    if (isNaN(d.getTime())) return new Date().toISOString();
+    return d.toISOString();
+  } catch {
+    return new Date().toISOString();
+  }
+}
+
 // ── Webhook handler ─────────────────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
@@ -292,7 +303,7 @@ async function processMessageEvent(
         }))
       : null;
 
-    const messageCreatedAt = msg.sentAt ? new Date(msg.sentAt).toISOString() : new Date().toISOString();
+    const messageCreatedAt = parseIsoDate(msg.sentAt);
 
     const { error: insertMessageError } = await supabase.from("messages").insert({
       conversation_id: conversation.id,
