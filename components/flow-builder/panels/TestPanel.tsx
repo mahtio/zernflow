@@ -32,6 +32,7 @@ import { useLocale } from "@/components/locale-provider";
 interface TestPanelProps {
   nodes: Node[];
   edges: Edge[];
+  customFields: Array<{ id: string; name: string; slug: string }>;
   onClose: () => void;
   onHighlightNode: (nodeId: string) => void;
 }
@@ -89,6 +90,7 @@ const stepColors: Record<string, string> = {
 export function TestPanel({
   nodes,
   edges,
+  customFields,
   onClose,
   onHighlightNode,
 }: TestPanelProps) {
@@ -115,6 +117,7 @@ export function TestPanel({
       selectedOptionId: selectedOptionId || undefined,
       mockContact: {
         tags: mockTags,
+        customFields: Object.fromEntries(customFields.map((field) => [field.slug, ""])),
         isSubscribed: true,
       },
     });

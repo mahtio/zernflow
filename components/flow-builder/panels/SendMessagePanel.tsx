@@ -55,22 +55,52 @@ interface SendMessagePanelData {
   [key: string]: unknown;
 }
 
+interface CustomFieldOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 interface SendMessagePanelProps {
   data: Record<string, unknown>;
   onChange: (data: Record<string, unknown>) => void;
   availableVariables?: string[];
+  customFields?: CustomFieldOption[];
   isCommentPrivateReply?: boolean;
 }
 
+const VARIABLE_DESCRIPTIONS: Record<string, { pt: string; en: string }> = {
+  message: { pt: "Mensagem recebida", en: "Received message" },
+  comment_text: { pt: "Texto do comentário", en: "Comment text" },
+  commenter_name: { pt: "Nome de quem comentou", en: "Commenter name" },
+  post_id: { pt: "Código da publicação", en: "Post ID" },
+  comment_id: { pt: "Código do comentário", en: "Comment ID" },
+  ai_response: { pt: "Resposta da IA", en: "AI response" },
+};
+
 function VariablePicker({
   variables,
+  customFields,
   onInsert,
 }: {
   variables: string[];
+  customFields: CustomFieldOption[];
   onInsert: (variable: string) => void;
 }) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
+
+  const renderToken = (variable: string, label?: string) => (
+    <button
+      key={variable}
+      type="button"
+      onClick={() => onInsert(variable)}
+      className="flex items-baseline gap-1.5 rounded px-1.5 py-1 text-left text-[11px] hover:bg-blue-50 dark:hover:bg-blue-950"
+    >
+      {label && <span className="font-medium text-foreground">{label}</span>}
+      <code className="font-mono font-medium text-blue-500">{`{{${variable}}}`}</code>
+    </button>
+  );
 
   return (
     <div className="mt-1.5">
@@ -80,22 +110,26 @@ function VariablePicker({
           : "Click to insert a variable. Dot paths like {{myvar.data.name}} read fields from JSON responses."}
       </p>
       <div className="mt-1 flex flex-wrap gap-1.5">
-        {variables.map((variable) => (
-          <button
-            key={variable}
-            type="button"
-            onClick={() => onInsert(variable)}
-            className="rounded px-1.5 py-0.5 font-mono text-[11px] font-medium text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950"
-          >
-            {`{{${variable}}}`}
-          </button>
-        ))}
+        {variables.map((variable) => {
+          const description = VARIABLE_DESCRIPTIONS[variable];
+          return renderToken(variable, description ? (pt ? description.pt : description.en) : undefined);
+        })}
       </div>
+      {customFields.length > 0 && (
+        <div className="mt-3 border-t border-border pt-2">
+          <p className="mb-1 text-[11px] font-semibold text-muted-foreground">
+            {pt ? "Campos personalizados" : "Custom fields"}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {customFields.map((field) => renderToken(`custom.${field.slug}`, field.name))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-export function SendMessagePanel({ data: rawData, onChange, availableVariables, isCommentPrivateReply }: SendMessagePanelProps) {
+export function SendMessagePanel({ data: rawData, onChange, availableVariables, customFields = [], isCommentPrivateReply }: SendMessagePanelProps) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
   const data = rawData as SendMessagePanelData;
@@ -127,6 +161,7 @@ export function SendMessagePanel({ data: rawData, onChange, availableVariables, 
         data={data}
         onChange={onChange}
         availableVariables={availableVariables || []}
+        customFields={customFields}
       />
     );
   }
@@ -142,6 +177,7 @@ export function SendMessagePanel({ data: rawData, onChange, availableVariables, 
           onRemove={() => removeMessage(msgIndex)}
           canRemove={messages.length > 1}
           availableVariables={availableVariables}
+          customFields={customFields}
         />
       ))}
 
@@ -183,10 +219,12 @@ function PrivateReplyEditor({
   data,
   onChange,
   availableVariables,
+  customFields,
 }: {
   data: SendMessagePanelData;
   onChange: (data: Record<string, unknown>) => void;
   availableVariables: string[];
+  customFields: CustomFieldOption[];
 }) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
@@ -229,7 +267,7 @@ function PrivateReplyEditor({
           className="w-full resize-none rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           placeholder={pt ? "Digite a resposta privada..." : "Type the private reply..."}
         />
-        <VariablePicker variables={availableVariables} onInsert={insertVariable} />
+        <VariablePicker variables={availableVariables} customFields={customFields} onInsert={insertVariable} />
       </div>
       <div>
         <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Imagem opcional por URL" : "Optional image URL"}</label>
@@ -285,6 +323,7 @@ function MessageEditor({
   onRemove,
   canRemove,
   availableVariables,
+  customFields,
 }: {
   index: number;
   message: Message;
@@ -292,6 +331,7 @@ function MessageEditor({
   onRemove: () => void;
   canRemove: boolean;
   availableVariables?: string[];
+  customFields: CustomFieldOption[];
 }) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
@@ -449,9 +489,10 @@ function MessageEditor({
                 rows={3}
                 className="w-full resize-none rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
-              {availableVariables && availableVariables.length > 0 ? (
+              {(availableVariables && availableVariables.length > 0) || customFields.length > 0 ? (
                 <VariablePicker
-                  variables={availableVariables}
+                  variables={availableVariables || []}
+                  customFields={customFields}
                   onInsert={insertVariable}
                 />
               ) : (

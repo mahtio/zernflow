@@ -187,6 +187,11 @@ export interface EnrollSequenceNodeData {
   sequenceId: string;
 }
 
+export type FlowVariableValue = string | number | boolean | null | FlowVariables | FlowVariableValue[];
+export interface FlowVariables {
+  [key: string]: FlowVariableValue | undefined;
+}
+
 export interface FlowExecutionContext {
   triggerId: string;
   flowId: string;
@@ -209,6 +214,6 @@ export interface FlowExecutionContext {
     callbackData?: string;
     sender?: { id: string; name?: string; username?: string };
   };
-  variables?: Record<string, string>;
+  variables?: FlowVariables;
   platform?: Platform;
 }

@@ -67,7 +67,7 @@ export interface SimulationResult {
 // --- Helpers ---
 
 function resolvePath(
-  variables: Record<string, string>,
+  variables: Record<string, unknown>,
   path: string
 ): unknown {
   let value: unknown = variables;
@@ -78,15 +78,14 @@ function resolvePath(
   return value;
 }
 
-// Mirrors interpolateVariables in engine.ts (dot paths, JSON for objects,
-// literal token when unresolved) so test-mode previews match production.
-function interpolate(
+// Mirrors interpolateVariables in engine.ts so test-mode previews match production.
+export function interpolateSimulationVariables(
   text: string,
-  variables: Record<string, string>
+  variables: Record<string, unknown>
 ): string {
   return text.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (token, path: string) => {
     const value = resolvePath(variables, path);
-    if (value === null || value === undefined) return token;
+    if (value === null || value === undefined) return path.startsWith("custom.") ? "" : token;
     return typeof value === "object" ? JSON.stringify(value) : String(value);
   });
 }
@@ -123,8 +122,9 @@ export function simulateFlow(
 ): SimulationResult {
   const steps: SimulationStep[] = [];
   const errors: string[] = [];
-  const variables: Record<string, string> = {
+  const variables: Record<string, unknown> = {
     message: config.incomingMessage,
+    custom: { ...(config.mockContact?.customFields ?? {}) },
   };
 
   // 1. Find trigger node
@@ -207,7 +207,7 @@ export function simulateFlow(
           text?: string;
           options?: Array<{ id: string; title: string; kind: "postback" | "url" | "quick_reply" }>;
         }>) || [];
-        const texts = messages.filter((m) => m.text).map((m) => interpolate(m.text!, variables));
+        const texts = messages.filter((m) => m.text).map((m) => interpolateSimulationVariables(m.text!, variables));
         const options = messages.flatMap((message) => message.options ?? []);
         const selected = options.find((option) => option.id === config.selectedOptionId);
         const privateWithoutWindow = data.deliveryMode === "private_reply" && selected?.kind !== "postback";
@@ -261,7 +261,10 @@ export function simulateFlow(
             );
           } else if (c.field.startsWith("variable:")) {
             const varName = c.field.replace("variable:", "");
-            fieldValue = variables[varName];
+            const variableValue = variables[varName];
+            fieldValue = variableValue === undefined || variableValue === null
+              ? undefined
+              : typeof variableValue === "object" ? JSON.stringify(variableValue) : String(variableValue);
           } else {
             fieldValue = config.mockContact?.customFields?.[c.field];
           }
@@ -345,7 +348,7 @@ export function simulateFlow(
 
       case "setCustomField": {
         const slug = (data.fieldSlug as string) || "unknown";
-        const value = interpolate((data.value as string) || "", variables);
+        const value = interpolateSimulationVariables((data.value as string) || "", variables);
         steps.push({
           nodeId: node.id,
           nodeType: "setCustomField",
@@ -458,7 +461,7 @@ export function simulateFlow(
       }
 
       case "commentReply": {
-        const text = interpolate((data.text as string) || "", variables);
+        const text = interpolateSimulationVariables((data.text as string) || "", variables);
         steps.push({
           nodeId: node.id,
           nodeType: "commentReply",
@@ -469,7 +472,7 @@ export function simulateFlow(
       }
 
       case "privateReply": {
-        const text = interpolate((data.text as string) || "", variables);
+        const text = interpolateSimulationVariables((data.text as string) || "", variables);
         steps.push({
           nodeId: node.id,
           nodeType: "privateReply",
@@ -481,7 +484,7 @@ export function simulateFlow(
 
       case "httpRequest": {
         const method = (data.method as string) || "GET";
-        const url = interpolate((data.url as string) || "", variables);
+        const url = interpolateSimulationVariables((data.url as string) || "", variables);
         steps.push({
           nodeId: node.id,
           nodeType: "httpRequest",

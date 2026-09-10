@@ -17,6 +17,7 @@ import type {
   PrivateReplyNodeData,
   AiResponseNodeData,
   EnrollSequenceNodeData,
+  FlowVariables,
 } from "./types";
 import { executeAiResponse } from "./nodes/ai-response";
 import { adaptMessage } from "./platform-adapter";
@@ -25,6 +26,38 @@ import { createTrackedLinkToken, createTrackedLinkUrl } from "@/lib/tracked-link
 import { createOptionPayload, parseOptionPayload, resolveOptionEdge } from "./interaction-resolver";
 import { optionHandle } from "./message-options";
 
+export async function loadContactCustomVariables(
+  supabase: SupabaseClient<Database>,
+  contactId: string,
+  workspaceId: string,
+  variables: FlowVariables
+): Promise<void> {
+  const { data: definitions, error: definitionsError } = await supabase
+    .from("custom_field_definitions")
+    .select("id, slug")
+    .eq("workspace_id", workspaceId);
+  if (definitionsError) throw new FlowLoadError(`custom fields could not be loaded: ${definitionsError.message}`);
+
+  const { data: values, error: valuesError } = await supabase
+    .from("contact_custom_fields")
+    .select("field_id, value")
+    .eq("contact_id", contactId);
+  if (valuesError) throw new FlowLoadError(`contact custom field values could not be loaded: ${valuesError.message}`);
+
+  const valueByFieldId = new Map((values ?? []).map((item) => [item.field_id, item.value]));
+  const current = variables.custom;
+  const existing = typeof current === "object" && current !== null && !Array.isArray(current)
+    ? current as FlowVariables
+    : {};
+  const custom: FlowVariables = {};
+  for (const definition of definitions ?? []) {
+    custom[definition.slug] = valueByFieldId.has(definition.id)
+      ? valueByFieldId.get(definition.id) ?? ""
+      : existing[definition.slug] ?? "";
+  }
+  variables.custom = custom;
+}
+
 export async function executeFlow(
   supabase: SupabaseClient<Database>,
   context: FlowExecutionContext
@@ -32,6 +65,7 @@ export async function executeFlow(
   // Ensure variables always exists so nodes (aiResponse, httpRequest) can write
   // outputs even when the trigger passed none (e.g. DM-triggered flows).
   context.variables ??= {};
+  await loadContactCustomVariables(supabase, context.contactId, context.workspaceId, context.variables);
 
   // Seed {{message}} from the incoming message text so the variable offered in
   // the builder resolves in production, not just in the simulator (which seeds
@@ -285,7 +319,8 @@ export async function resumeSession(
     }
   }
 
-  context.variables = (session.variables as Record<string, string>) || {};
+  context.variables = (session.variables as FlowVariables) || {};
+  await loadContactCustomVariables(supabase, context.contactId, context.workspaceId, context.variables);
 
   // The resume is driven by a fresh reply; make {{message}} reflect it.
   if (context.incomingMessage.text) {
@@ -873,7 +908,10 @@ async function executeCondition(
       fieldValue = String(hasTag);
     } else if (condition.field.startsWith("variable:")) {
       const varName = condition.field.replace("variable:", "");
-      fieldValue = context.variables?.[varName];
+      const variableValue = context.variables?.[varName];
+      fieldValue = variableValue === undefined || variableValue === null
+        ? undefined
+        : typeof variableValue === "object" ? JSON.stringify(variableValue) : String(variableValue);
     } else {
       // Check custom fields
       const customFields = contact.contact_custom_fields as Array<{
@@ -1470,15 +1508,16 @@ function resolveVariablePath(
   return value;
 }
 
-function interpolateVariables(
+export function interpolateVariables(
   text: string,
   variables: Record<string, unknown>
 ): string {
   // Supports dot paths ({{myvar.data.name}}) into object variables (e.g. parsed
-  // httpRequest JSON responses). Unresolved paths leave the token literal.
+  // httpRequest JSON responses). Missing custom fields are intentionally empty;
+  // all other unresolved paths keep their literal token for backward compatibility.
   return text.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (token, path: string) => {
     const value = resolveVariablePath(variables, path);
-    if (value === null || value === undefined) return token;
+    if (value === null || value === undefined) return path.startsWith("custom.") ? "" : token;
     return typeof value === "object" ? JSON.stringify(value) : String(value);
   });
 }

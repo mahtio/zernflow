@@ -185,6 +185,7 @@ export function NodeConfigSidebar({
             data={data}
             onChange={handleChange}
             availableVariables={getFlowVariables({ node, nodes, edges })}
+            customFields={customFields}
             isCommentPrivateReply={isCommentPrivateReply}
           />
         );

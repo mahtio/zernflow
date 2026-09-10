@@ -610,6 +610,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
           <TestPanel
             nodes={nodes}
             edges={edges}
+            customFields={availableCustomFields}
             onClose={() => setTestPanelOpen(false)}
             onHighlightNode={(nodeId) => {
               // Scroll to and highlight the node
