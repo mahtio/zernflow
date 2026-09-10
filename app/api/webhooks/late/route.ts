@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { resolveWebhookSecret, verifyWebhookSignature } from "@/lib/webhook-verify";
+import { resolveWebhookSecret, verifyWebhookSignature } from "@/lib/zernio-webhook";
 import { executeFlow } from "@/lib/flow-engine/engine";
-import { handleGlobalKeywords } from "@/lib/flow-engine/global-keywords";
 import { messagePreview } from "@/lib/message-preview";
-import { upsertContactForSender } from "@/lib/contact-upsert";
+import { upsertContactForSender } from "@/lib/inbox-sync";
 import type { Database } from "@/lib/types/database";
 
 interface WebhookPayload {
@@ -374,10 +373,6 @@ async function runFlowExecution(
 
     if (flows) {
       for (const flow of flows) {
-        if (flow.channel_id && flow.channel_id !== channel.id) {
-          continue;
-        }
-
         const nodes = (flow.nodes as Array<{
           id: string;
           type: string;
@@ -393,7 +388,7 @@ async function runFlowExecution(
         );
 
         if (matchingTrigger) {
-          await executeFlow({
+          await executeFlow(supabase, {
             ...flowContext,
             triggerId: matchingTrigger.id,
             flowId: flow.id,
@@ -403,6 +398,43 @@ async function runFlowExecution(
       }
     }
   }
+}
+
+async function handleGlobalKeywords(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  workspaceId: string,
+  contactId: string,
+  text: string | undefined
+): Promise<boolean> {
+  if (!text) return false;
+
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("global_keywords")
+    .eq("id", workspaceId)
+    .single();
+
+  if (!workspace?.global_keywords) return false;
+
+  const normalizedText = text.toLowerCase().trim();
+  const keywords = workspace.global_keywords as Array<
+    string | { keyword: string; action?: string }
+  >;
+
+  for (const entry of keywords) {
+    const keyword = typeof entry === "string" ? entry : entry.keyword;
+    if (normalizedText !== keyword.toLowerCase()) continue;
+
+    if (typeof entry !== "string" && (entry.action === "subscribe" || entry.action === "unsubscribe")) {
+      await supabase
+        .from("contacts")
+        .update({ is_subscribed: entry.action === "subscribe" })
+        .eq("id", contactId);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 // ── Comment webhook handler ──────────────────────────────────────────────────
@@ -480,8 +512,6 @@ async function processCommentEvent(
   if (!flows?.length) return;
 
   for (const flow of flows) {
-    if (flow.channel_id && flow.channel_id !== channel.id) continue;
-
     const nodes = (flow.nodes as Array<{
       id: string;
       type: string;
@@ -513,7 +543,7 @@ async function processCommentEvent(
       if (!matches) continue;
     }
 
-    await executeFlow({
+    await executeFlow(supabase, {
       triggerId: commentTrigger.id,
       flowId: flow.id,
       channelId: channel.id,
@@ -528,10 +558,10 @@ async function processCommentEvent(
           username: comment.sender.username,
         },
       },
-      commentContext: {
-        commentId: comment.id,
-        mediaId: comment.mediaId,
-        text: comment.text,
+      variables: {
+        comment_id: comment.id,
+        post_id: comment.mediaId,
+        comment_text: comment.text,
         username: comment.sender.username,
       },
     });

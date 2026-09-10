@@ -77,6 +77,7 @@ export function InboxView({
     }
 
     const conversationId = selected.id;
+    const unreadCount = selected.unread_count;
     let cancelled = false;
 
     async function loadMessages() {
@@ -103,7 +104,7 @@ export function InboxView({
       }
 
       // Mark as read
-      if (selected.unread_count > 0) {
+      if (unreadCount > 0) {
         const supabase = createClient();
         await supabase
           .from("conversations")
