@@ -43,6 +43,7 @@ interface PendingInvite {
   role: string;
   invited_by: string;
   status: string;
+  auth_mode: "login" | "register";
   created_at: string;
   expires_at: string;
 }
@@ -168,10 +169,11 @@ export function TeamView({
     setRevokingId(null);
   }
 
-  async function handleCopyInvite(inviteId: string) {
-    const inviteUrl = `${window.location.origin}/invite/${inviteId}`;
+  async function handleCopyInvite(invite: PendingInvite) {
+    const route = invite.auth_mode === "login" ? "login" : "register";
+    const inviteUrl = `${window.location.origin}/${route}?invite=${encodeURIComponent(invite.id)}`;
     await navigator.clipboard.writeText(inviteUrl);
-    setCopiedInviteId(inviteId);
+    setCopiedInviteId(invite.id);
     setTimeout(() => setCopiedInviteId(null), 2000);
   }
 
@@ -390,6 +392,11 @@ export function TeamView({
                                 {roleIcons[invite.role] ?? roleIcons.member}
                                 {roleLabel[invite.role] ?? invite.role}
                               </span>
+                              <span className="text-[10px] font-medium text-muted-foreground">
+                                {invite.auth_mode === "login"
+                                  ? (pt ? "Usuário cadastrado" : "Existing user")
+                                  : (pt ? "Novo usuário" : "New user")}
+                              </span>
                               {isExpired ? (
                                 <span className="text-[10px] text-destructive">
                                   {pt ? "Expirado" : "Expired"}
@@ -412,7 +419,7 @@ export function TeamView({
                         {canManageInvites && (
                           <div className="ml-4 flex shrink-0 items-center gap-1">
                             <button
-                              onClick={() => handleCopyInvite(invite.id)}
+                              onClick={() => handleCopyInvite(invite)}
                               className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                               title={pt ? "Copiar link do convite" : "Copy invitation link"}
                             >

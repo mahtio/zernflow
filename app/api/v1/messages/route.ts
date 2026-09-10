@@ -11,6 +11,33 @@ interface ZernioAttachment {
   previewUrl?: string | null;
 }
 
+const MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024;
+const allowedAttachmentTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+  "video/mp4",
+  "video/webm",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/ogg",
+  "audio/wav",
+  "application/pdf",
+  "text/plain",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+
+function attachmentType(file: File): "image" | "video" | "audio" | "file" {
+  if (file.type.startsWith("image/")) return "image";
+  if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
+  return "file";
+}
+
 function attachmentUrl(
   conversationId: string,
   messageId: string,
@@ -150,12 +177,35 @@ export async function POST(request: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
-  const { conversationId, text } = body;
+  const contentType = request.headers.get("content-type") ?? "";
+  let conversationId: string | null = null;
+  let text = "";
+  let file: File | null = null;
 
-  if (!conversationId || !text) {
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const conversationIdValue = formData.get("conversationId");
+    const textValue = formData.get("text");
+    const fileValue = formData.get("file");
+    conversationId = typeof conversationIdValue === "string" ? conversationIdValue : null;
+    text = typeof textValue === "string" ? textValue.trim() : "";
+    file = fileValue instanceof File && fileValue.size > 0 ? fileValue : null;
+  } else {
+    const body = await request.json();
+    conversationId = typeof body.conversationId === "string" ? body.conversationId : null;
+    text = typeof body.text === "string" ? body.text.trim() : "";
+  }
+
+  if (!conversationId || (!text && !file)) {
     return NextResponse.json(
-      { error: "conversationId and text required" },
+      { error: "conversationId and message content required" },
+      { status: 400 }
+    );
+  }
+
+  if (file && (file.size > MAX_ATTACHMENT_SIZE || !allowedAttachmentTypes.has(file.type))) {
+    return NextResponse.json(
+      { error: file.size > MAX_ATTACHMENT_SIZE ? "Attachment exceeds 25 MB" : "Unsupported attachment type" },
       { status: 400 }
     );
   }
@@ -193,32 +243,61 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "API key not configured" }, { status: 400 });
   }
 
-  // Send via Zernio SDK — Zernio stores the message, no local insert needed
+  // Send via Zernio — binary attachments require multipart/form-data.
   try {
-    const zernio = createZernioClient(workspace.late_api_key_encrypted);
-    const res = await zernio.messages.sendInboxMessage({
-      path: { conversationId: conversation.late_conversation_id },
-      body: { accountId: channel.late_account_id, message: text },
-    });
+    let responseData: { data?: { messageId?: string } };
 
-    const messageId = (res.data as any)?.data?.messageId ?? null;
+    if (file) {
+      const zernioFormData = new FormData();
+      zernioFormData.set("accountId", channel.late_account_id);
+      if (text) zernioFormData.set("message", text);
+      zernioFormData.set("attachmentType", attachmentType(file));
+      zernioFormData.set("file", file, file.name);
+
+      const response = await fetch(
+        `https://zernio.com/api/v1/inbox/conversations/${encodeURIComponent(conversation.late_conversation_id)}/messages`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${workspace.late_api_key_encrypted}`,
+            "Idempotency-Key": crypto.randomUUID(),
+          },
+          body: zernioFormData,
+        }
+      );
+      responseData = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error((responseData as { error?: string }).error ?? `Upload failed (${response.status})`);
+      }
+    } else {
+      const zernio = createZernioClient(workspace.late_api_key_encrypted);
+      const response = await zernio.messages.sendInboxMessage({
+        path: { conversationId: conversation.late_conversation_id },
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: { accountId: channel.late_account_id, message: text },
+      });
+      responseData = response.data as { data?: { messageId?: string } };
+    }
+
+    const messageId = responseData?.data?.messageId ?? null;
+    const preview = text || (file ? `[${file.name}]` : "");
 
     // Update conversation's last message info (ZernFlow-specific metadata)
     await supabase
       .from("conversations")
       .update({
         last_message_at: new Date().toISOString(),
-        last_message_preview: messagePreview(text),
+        last_message_preview: messagePreview(preview),
       })
       .eq("id", conversationId);
 
-    // Return a message-shaped response for the UI's optimistic update
+    // The client refreshes from Zernio after a successful attachment send.
     return NextResponse.json(
       {
         id: messageId ?? `sent-${Date.now()}`,
         conversation_id: conversationId,
         direction: "outbound",
-        text,
+        text: text || null,
         attachments: null,
         quick_reply_payload: null,
         postback_payload: null,

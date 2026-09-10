@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Paperclip, Bot, User, MessageSquare, CheckCircle, Clock, RotateCcw, Loader2, FileText, ExternalLink } from "lucide-react";
+import { Send, Paperclip, Bot, User, MessageSquare, CheckCircle, Clock, RotateCcw, Loader2, FileText, ExternalLink, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
@@ -309,11 +309,14 @@ export function MessageThread({
   const pt = locale === "pt-BR";
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [statusUpdating, setStatusUpdating] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const updateConversationStatus = useCallback(async (status: ConversationStatus) => {
     if (!conversation || statusUpdating) return;
@@ -389,58 +392,78 @@ export function MessageThread({
   }, [conversation?.id]);
 
   async function handleSend() {
-    if (!input.trim() || !conversation || sending) return;
+    if ((!input.trim() && !selectedFile) || !conversation || sending) return;
 
     const text = input.trim();
-    setInput("");
+    const file = selectedFile;
+    setSendError(null);
     setSending(true);
 
-    // Optimistic update: add a temporary message immediately
+    // Text-only messages keep the immediate optimistic update. Attachments are
+    // loaded from Zernio after upload so the preview uses its canonical URL.
     const optimisticId = `optimistic-${Date.now()}`;
-    const optimisticMessage: Message = {
-      id: optimisticId,
-      conversation_id: conversation.id,
-      direction: "outbound",
-      text,
-      attachments: null,
-      quick_reply_payload: null,
-      postback_payload: null,
-      callback_data: null,
-      platform_message_id: null,
-      sent_by_flow_id: null,
-      sent_by_node_id: null,
-      sent_by_user_id: null,
-      status: "pending",
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, optimisticMessage]);
+    if (!file) {
+      const optimisticMessage: Message = {
+        id: optimisticId,
+        conversation_id: conversation.id,
+        direction: "outbound",
+        text,
+        attachments: null,
+        quick_reply_payload: null,
+        postback_payload: null,
+        callback_data: null,
+        platform_message_id: null,
+        sent_by_flow_id: null,
+        sent_by_node_id: null,
+        sent_by_user_id: null,
+        status: "pending",
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, optimisticMessage]);
+      setInput("");
+    }
 
     try {
-      const res = await fetch("/api/v1/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId: conversation.id, text }),
-      });
+      const requestInit: RequestInit = { method: "POST" };
+      if (file) {
+        const formData = new FormData();
+        formData.set("conversationId", conversation.id);
+        formData.set("text", text);
+        formData.set("file", file);
+        requestInit.body = formData;
+      } else {
+        requestInit.headers = { "Content-Type": "application/json" };
+        requestInit.body = JSON.stringify({ conversationId: conversation.id, text });
+      }
 
+      const res = await fetch("/api/v1/messages", requestInit);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Send failed (${res.status})`);
       }
 
-      const confirmedMessage: Message = await res.json();
-
-      // Replace optimistic message with confirmed one
-      setMessages((prev) =>
-        prev.map((m) => (m.id === optimisticId ? confirmedMessage : m))
-      );
+      if (file) {
+        setInput("");
+        setSelectedFile(null);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        const messagesResponse = await fetch(`/api/v1/messages?conversationId=${conversation.id}`);
+        if (messagesResponse.ok) setMessages(await messagesResponse.json());
+      } else {
+        const confirmedMessage: Message = await res.json();
+        setMessages((prev) =>
+          prev.map((m) => (m.id === optimisticId ? confirmedMessage : m))
+        );
+      }
     } catch (err) {
       console.error("Failed to send message:", err);
-      // Mark optimistic message as failed
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === optimisticId ? { ...m, status: "failed" as const } : m
-        )
-      );
+      setSendError(err instanceof Error ? err.message : (pt ? "Falha ao enviar" : "Failed to send"));
+      if (!file) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === optimisticId ? { ...m, status: "failed" as const } : m
+          )
+        );
+      }
     } finally {
       setSending(false);
     }
@@ -571,40 +594,90 @@ export function MessageThread({
 
       {/* Composer */}
       <div className="border-t border-border p-4">
-        <div className="mx-auto flex max-w-2xl items-end gap-2">
-          <div className="flex-1">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                autoResize();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
+        <div className="mx-auto max-w-2xl">
+          {selectedFile && (
+            <div className="mb-2 flex items-center gap-2 rounded-lg border border-border bg-muted/50 px-3 py-2">
+              <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-xs">{selectedFile.name}</span>
+              <span className="shrink-0 text-[10px] text-muted-foreground">
+                {(selectedFile.size / (1024 * 1024)).toFixed(1)} MB
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedFile(null);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+                disabled={sending}
+                aria-label={pt ? "Remover anexo" : "Remove attachment"}
+                className="rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          )}
+          {sendError && <p className="mb-2 text-xs text-destructive">{sendError}</p>}
+          <div className="flex items-end gap-2">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/webm,audio/mpeg,audio/mp4,audio/ogg,audio/wav,application/pdf,text/plain,.doc,.docx,.xls,.xlsx"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                if (file && file.size > 25 * 1024 * 1024) {
+                  setSendError(pt ? "O anexo deve ter no máximo 25 MB" : "Attachment must be 25 MB or smaller");
+                  event.target.value = "";
+                  return;
                 }
+                setSendError(null);
+                setSelectedFile(file);
               }}
-              placeholder={pt ? "Digite uma mensagem..." : "Type a message..."}
-              rows={1}
-              className="w-full resize-none rounded-lg border border-input bg-background px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-              style={{ maxHeight: 150 }}
             />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              aria-label={pt ? "Adicionar anexo" : "Add attachment"}
+              title={pt ? "Adicionar anexo" : "Add attachment"}
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-input text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-50"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            <div className="flex-1">
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => {
+                  setInput(e.target.value);
+                  autoResize();
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={pt ? "Digite uma mensagem..." : "Type a message..."}
+                rows={1}
+                className="w-full resize-none rounded-lg border border-input bg-background px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                style={{ maxHeight: 150 }}
+              />
+            </div>
+            <button
+              onClick={handleSend}
+              disabled={(!input.trim() && !selectedFile) || sending}
+              aria-label={pt ? "Enviar mensagem" : "Send message"}
+              className={cn(
+                "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg transition-colors",
+                (input.trim() || selectedFile) && !sending
+                  ? "bg-primary text-primary-foreground hover:opacity-90"
+                  : "bg-muted text-muted-foreground"
+              )}
+            >
+              {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            </button>
           </div>
-          <button
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            aria-label={pt ? "Enviar mensagem" : "Send message"}
-            className={cn(
-              "flex h-10 w-10 items-center justify-center rounded-lg transition-colors",
-              input.trim() && !sending
-                ? "bg-primary text-primary-foreground hover:opacity-90"
-                : "bg-muted text-muted-foreground"
-            )}
-          >
-            <Send className="h-4 w-4" />
-          </button>
         </div>
       </div>
     </div>

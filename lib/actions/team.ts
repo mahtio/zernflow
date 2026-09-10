@@ -1,6 +1,8 @@
 "use server";
 
+import { headers } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { completeInviteForUser, findAuthUserByEmail, getInviteContext } from "@/lib/invite-auth";
 import { getWorkspace } from "@/lib/workspace";
 
 export async function inviteTeamMember(
@@ -36,26 +38,32 @@ export async function inviteTeamMember(
     return { error: "Invalid role. Must be member or admin." };
   }
 
-  // Check if this email is already a member
-  const { data: existingMembers } = await supabase
-    .from("workspace_members")
-    .select("user_id, workspaces!inner(id)")
-    .eq("workspace_id", workspaceId);
+  const serviceClient = await createServiceClient();
+  const existingUser = await findAuthUserByEmail(trimmedEmail);
 
-  if (existingMembers && existingMembers.length > 0) {
-    // We need to check auth.users for the email, but RLS won't let us.
-    // Instead, check if there's already a pending invite for this email.
-    const { data: existingInvite } = await supabase
-      .from("workspace_invites")
-      .select("id")
+  if (existingUser) {
+    const { data: existingMembership } = await serviceClient
+      .from("workspace_members")
+      .select("workspace_id")
       .eq("workspace_id", workspaceId)
-      .eq("email", trimmedEmail)
-      .eq("status", "pending")
-      .single();
+      .eq("user_id", existingUser.id)
+      .maybeSingle();
 
-    if (existingInvite) {
-      return { error: "An invite for this email is already pending" };
+    if (existingMembership) {
+      return { error: "This user is already a workspace member" };
     }
+  }
+
+  const { data: existingInvite } = await supabase
+    .from("workspace_invites")
+    .select("id")
+    .eq("workspace_id", workspaceId)
+    .eq("email", trimmedEmail)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (existingInvite) {
+    return { error: "An invite for this email is already pending" };
   }
 
   const { data: invite, error: insertError } = await supabase
@@ -66,6 +74,7 @@ export async function inviteTeamMember(
       role,
       invited_by: user.id,
       status: "pending",
+      auth_mode: existingUser ? "login" : "register",
     })
     .select("*")
     .single();
@@ -124,72 +133,49 @@ export async function acceptInvite(inviteId: string) {
   } = await supabase.auth.getUser();
 
   if (!user) return { error: "Not authenticated" };
+  return completeInviteForUser(inviteId, user);
+}
 
-  // Use service client to bypass RLS (the user is not a workspace member yet)
-  const serviceClient = await createServiceClient();
-
-  // Fetch the invite
-  const { data: invite, error: fetchError } = await serviceClient
-    .from("workspace_invites")
-    .select("*")
-    .eq("id", inviteId)
-    .single();
-
-  if (fetchError || !invite) {
-    return { error: "Invite not found" };
+export async function registerWithInvite(
+  inviteId: string,
+  password: string,
+  fullName: string
+) {
+  const context = await getInviteContext(inviteId);
+  if (!context.ok) return { error: "Este convite não é válido." };
+  if (context.invite.authMode !== "register") {
+    return { error: "Este e-mail já possui conta.", redirectTo: `/login?invite=${encodeURIComponent(inviteId)}` };
   }
 
-  if (invite.status !== "pending") {
-    return { error: "This invite is no longer valid" };
+  const name = fullName.trim();
+  if (!name) return { error: "Informe seu nome." };
+  if (password.length < 6) return { error: "A senha deve ter pelo menos 6 caracteres." };
+
+  const requestHeaders = await headers();
+  const origin = requestHeaders.get("origin");
+  if (!origin) return { error: "Origem da solicitação inválida." };
+
+  const supabase = await createClient();
+  const emailRedirectTo = `${origin}/auth/callback?invite=${encodeURIComponent(inviteId)}`;
+  const { data, error } = await supabase.auth.signUp({
+    email: context.invite.email,
+    password,
+    options: { data: { full_name: name }, emailRedirectTo },
+  });
+
+  if (error) {
+    const refreshed = await getInviteContext(inviteId);
+    if (refreshed.ok && refreshed.invite.authMode === "login") {
+      return { error: "Este e-mail já possui conta.", redirectTo: `/login?invite=${encodeURIComponent(inviteId)}` };
+    }
+    return { error: error.message };
   }
 
-  if (new Date(invite.expires_at) < new Date()) {
-    return { error: "This invite has expired" };
+  if (!data.session) {
+    return { ok: true, confirmationRequired: true, email: context.invite.email };
   }
 
-  // Verify the invite email matches the current user's email
-  if (invite.email !== user.email) {
-    return { error: "This invite was sent to a different email address" };
-  }
-
-  // Check if user is already a member
-  const { data: existingMembership } = await serviceClient
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("workspace_id", invite.workspace_id)
-    .eq("user_id", user.id)
-    .single();
-
-  if (existingMembership) {
-    // Already a member, just mark the invite as accepted
-    await serviceClient
-      .from("workspace_invites")
-      .update({ status: "accepted" })
-      .eq("id", inviteId);
-
-    return { ok: true, workspaceId: invite.workspace_id, alreadyMember: true };
-  }
-
-  // Insert into workspace_members (service client bypasses owner-only RLS)
-  const { error: insertError } = await serviceClient
-    .from("workspace_members")
-    .insert({
-      workspace_id: invite.workspace_id,
-      user_id: user.id,
-      role: invite.role,
-    });
-
-  if (insertError) {
-    return { error: insertError.message };
-  }
-
-  // Update invite status to accepted
-  await serviceClient
-    .from("workspace_invites")
-    .update({ status: "accepted" })
-    .eq("id", inviteId);
-
-  return { ok: true, workspaceId: invite.workspace_id };
+  return { ok: true, confirmationRequired: false };
 }
 
 export async function revokeInvite(inviteId: string) {
