@@ -61,7 +61,9 @@ function normalizePrivateMessage(
       ? existing.type
       : legacyButton?.type === "url" || legacyButton?.type === "postback"
         ? legacyButton.type
-        : undefined;
+        : source.interactionMode === "none"
+          ? undefined
+          : "postback";
   const title = (canonical?.title || existing?.title || legacyButton?.title || DEFAULT_PRIVATE_REPLY_BUTTON_TITLE).trim();
   const destinationUrl = canonical?.destinationUrl || existing?.destinationUrl || legacyButton?.url;
   const mediaUrl = source.mediaType === "image" ? source.mediaUrl : source.imageUrl;

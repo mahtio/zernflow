@@ -8,6 +8,12 @@ interface IncomingMessage {
   sender?: { id: string };
 }
 
+interface KeywordCandidate {
+  trigger: Trigger;
+  matchRank: number;
+  keywordLength: number;
+}
+
 type Trigger = Database["public"]["Tables"]["triggers"]["Row"];
 
 export async function matchTrigger(
@@ -68,27 +74,39 @@ export async function matchTrigger(
   // 3. Check keyword triggers
   if (message.text) {
     const text = message.text.toLowerCase().trim();
+    const candidates: KeywordCandidate[] = [];
 
     for (const trigger of triggers.filter((t) => t.type === "keyword")) {
       const config = trigger.config as {
         keywords?: Array<string | { value: string; matchType?: "exact" | "contains" | "startsWith" }>;
         matchType?: "exact" | "contains" | "startsWith";
       };
-
       if (!config.keywords) continue;
 
       for (const kw of config.keywords) {
-        // Support both formats: plain string or { value, matchType } object
-        const keyword = (typeof kw === "string" ? kw : kw.value).toLowerCase();
-        const matchType =
-          (typeof kw === "object" && kw.matchType) || config.matchType || "contains";
-
-        if (matchType === "exact" && text === keyword) return trigger;
-        if (matchType === "contains" && text.includes(keyword)) return trigger;
-        if (matchType === "startsWith" && text.startsWith(keyword))
-          return trigger;
+        const keyword = (typeof kw === "string" ? kw : kw.value).toLowerCase().trim();
+        const matchType = (typeof kw === "object" && kw.matchType) || config.matchType || "contains";
+        const matched = matchType === "exact"
+          ? text === keyword
+          : matchType === "startsWith"
+            ? text.startsWith(keyword)
+            : text.includes(keyword);
+        if (matched) {
+          candidates.push({
+            trigger,
+            matchRank: matchType === "exact" ? 3 : matchType === "startsWith" ? 2 : 1,
+            keywordLength: keyword.length,
+          });
+        }
       }
     }
+    candidates.sort((a, b) =>
+      ((b.trigger.priority ?? 0) - (a.trigger.priority ?? 0)) ||
+      (b.matchRank - a.matchRank) ||
+      (b.keywordLength - a.keywordLength) ||
+      (a.trigger.id < b.trigger.id ? -1 : a.trigger.id > b.trigger.id ? 1 : 0)
+    );
+    if (candidates[0]) return candidates[0].trigger;
   }
 
   // 4. Check welcome trigger (first inbound message for this contact on this channel)

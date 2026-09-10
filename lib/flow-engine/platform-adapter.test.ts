@@ -74,4 +74,22 @@ describe("adaptMessage for whatsapp", () => {
 
     expect(adapted.template?.type).toBe("generic");
   });
+
+  it("deriva exclusivamente botões ou respostas rápidas do modelo canônico", () => {
+    const buttons = adaptMessage({
+      text: "Escolha",
+      interactionMode: "buttons",
+      options: [{ id: "a", title: "Continuar", kind: "postback" }],
+    }, "instagram", (option) => `signed:${option.id}`);
+    expect(buttons.buttons).toEqual([{ title: "Continuar", type: "postback", payload: "signed:a", url: undefined }]);
+    expect(buttons.quickReplies).toBeUndefined();
+
+    const replies = adaptMessage({
+      text: "Escolha",
+      interactionMode: "quick_replies",
+      options: [{ id: "q", title: "Opção", kind: "quick_reply" }],
+    }, "instagram", (option) => `signed:${option.id}`);
+    expect(replies.quickReplies).toEqual([{ title: "Opção", payload: "signed:q" }]);
+    expect(replies.buttons).toBeUndefined();
+  });
 });

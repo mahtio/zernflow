@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { resolveWebhookSecret, verifyWebhookSignature } from "@/lib/zernio-webhook";
-import { executeFlow } from "@/lib/flow-engine/engine";
+import { executeFlow, reactivateExpiredOptionSession } from "@/lib/flow-engine/engine";
 import { messagePreview } from "@/lib/message-preview";
 import { upsertContactForSender } from "@/lib/inbox-sync";
 import { processComment } from "@/lib/comment-processor";
@@ -382,6 +382,9 @@ async function runFlowExecution(
   const optionPayload = parseOptionPayload(metadata?.postbackPayload || metadata?.quickReplyPayload);
   if (waitingSession && optionPayload) {
     if (await resumeWaitingSession(supabase, flowContext)) return;
+  } else if (!waitingSession && optionPayload) {
+    const eventId = payload.id || msg.platformMessageId || msg.id;
+    if (await reactivateExpiredOptionSession(supabase, flowContext, eventId)) return;
   }
 
   const handled = await handleGlobalKeywords(

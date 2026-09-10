@@ -96,7 +96,13 @@ export function TestPanel({
   const pt = locale === "pt-BR";
   const [message, setMessage] = useState("help");
   const [tags, setTags] = useState("");
+  const [selectedOptionId, setSelectedOptionId] = useState("");
   const [result, setResult] = useState<SimulationResult | null>(null);
+  const availableOptions = nodes.flatMap((node) => {
+    if (node.type !== "sendMessage") return [];
+    const messages = (node.data as { messages?: Array<{ options?: Array<{ id: string; title: string; kind: string }> }> }).messages ?? [];
+    return messages.flatMap((item) => item.options ?? []).map((option) => ({ ...option, nodeId: node.id }));
+  });
 
   function runTest() {
     const mockTags = tags
@@ -106,6 +112,7 @@ export function TestPanel({
 
     const sim = simulateFlow(nodes, edges, {
       incomingMessage: message,
+      selectedOptionId: selectedOptionId || undefined,
       mockContact: {
         tags: mockTags,
         isSubscribed: true,
@@ -151,18 +158,19 @@ export function TestPanel({
                 {text}
               </div>
             ))}
-            {r.buttons && r.buttons.length > 0 && (
+            {r.options && r.options.length > 0 && (
               <div className="flex flex-wrap gap-1 pt-1">
-                {r.buttons.map((b, i) => (
-                  <span
-                    key={i}
-                    className="rounded-md border border-border px-2 py-0.5 text-[10px]"
-                  >
-                    {b.title}
+                {r.options.map((option) => (
+                  <span key={option.id} className={`rounded-md border px-2 py-0.5 text-[10px] ${r.selectedOptionId === option.id ? "border-blue-500 bg-blue-50 text-blue-700" : "border-border"}`}>
+                    {option.kind === "url" ? "↗" : option.kind === "quick_reply" ? "◌" : "↳"} {option.title}
                   </span>
                 ))}
               </div>
             )}
+            <p className="text-[10px] text-muted-foreground">
+              {r.waitingForChoice ? (pt ? "Aguardando uma opção válida" : "Waiting for a valid option") : r.dmWindowOpen ? (pt ? "Janela de DM aberta" : "DM window open") : ""}
+            </p>
+            {r.warning && <p className="text-[10px] text-amber-600">{r.warning}</p>}
           </div>
         );
 
@@ -338,6 +346,17 @@ export function TestPanel({
             }}
           />
         </div>
+        {availableOptions.length > 0 && (
+          <div>
+            <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              {pt ? "Interação com opção" : "Option interaction"}
+            </label>
+            <select value={selectedOptionId} onChange={(event) => setSelectedOptionId(event.target.value)} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
+              <option value="">{pt ? "Nenhuma — manter espera" : "None — keep waiting"}</option>
+              {availableOptions.map((option) => <option key={`${option.nodeId}:${option.id}`} value={option.id}>{option.kind === "url" ? "↗" : option.kind === "quick_reply" ? "◌" : "↳"} {option.title || option.id}</option>)}
+            </select>
+          </div>
+        )}
         <div>
           <label className="mb-1 block text-xs font-medium text-muted-foreground">
             {pt ? "Etiquetas simuladas (separadas por vírgula)" : "Mock Tags (comma-separated)"}

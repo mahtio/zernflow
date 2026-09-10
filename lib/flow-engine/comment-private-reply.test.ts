@@ -29,11 +29,12 @@ describe("normalizeCommentPrivateReplies", () => {
         text: "Olá",
         mediaUrl: "https://example.com/welcome.png",
         mediaType: "image",
-        privateReplyButton: {
-          type: "postback",
+        interactionMode: "buttons",
+        options: [{
+          id: "opt_private_first-message",
+          kind: "postback",
           title: "Continuar",
-          payload: "comment_private_reply:flow-1:first-message",
-        },
+        }],
       }],
     });
     const second = normalizeCommentPrivateReplies(first.nodes, first.edges, "flow-1");
@@ -60,7 +61,7 @@ describe("normalizeCommentPrivateReplies", () => {
     };
     const valid = normalizeCommentPrivateReplies([trigger, urlNode], [edge], "flow-1");
     expect(valid.errors).toEqual([]);
-    expect((valid.nodes[1].data as any).messages[0].privateReplyButton.destinationUrl).toBe("https://example.com/oferta");
+    expect((valid.nodes[1].data as any).messages[0].options[0].destinationUrl).toBe("https://example.com/oferta");
 
     const unsafe: FlowNode = {
       ...urlNode,

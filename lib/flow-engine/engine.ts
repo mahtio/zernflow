@@ -161,6 +161,55 @@ export async function resumeWaitingSession(
   return true;
 }
 
+export async function reactivateExpiredOptionSession(
+  supabase: SupabaseClient<Database>,
+  context: FlowExecutionContext,
+  eventId: string
+): Promise<boolean> {
+  const payload = parseOptionPayload(context.incomingMessage.postbackPayload || context.incomingMessage.quickReplyPayload);
+  if (!payload) return false;
+  const { data: expired } = await supabase
+    .from("flow_sessions")
+    .select("*")
+    .eq("contact_id", context.contactId)
+    .eq("channel_id", context.channelId)
+    .eq("flow_id", payload.flowId)
+    .eq("status", "expired")
+    .eq("waiting_node_id", payload.nodeId)
+    .eq("published_version", payload.version)
+    .contains("accepted_option_ids", [payload.optionId])
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!expired) return false;
+
+  const { data: reactivated, error } = await supabase
+    .from("flow_sessions")
+    .insert({
+      contact_id: expired.contact_id,
+      flow_id: expired.flow_id,
+      channel_id: expired.channel_id,
+      status: "active",
+      current_node_id: expired.waiting_node_id,
+      variables: expired.variables,
+      flow_stack: expired.flow_stack,
+      waiting_for_input: true,
+      waiting_type: expired.waiting_type,
+      waiting_node_id: expired.waiting_node_id,
+      published_version: expired.published_version,
+      accepted_option_ids: expired.accepted_option_ids,
+      predecessor_session_id: expired.id,
+      consumed_event_id: eventId,
+    })
+    .select("*")
+    .single();
+  if (error?.code === "23505") return true;
+  if (error) throw new FlowLoadError(`late option session could not be created: ${error.message}`);
+  if (!reactivated) return false;
+  await resumeSession(supabase, reactivated, { ...context, flowId: expired.flow_id });
+  return true;
+}
+
 export async function resumeSession(
   supabase: SupabaseClient<Database>,
   session: Database["public"]["Tables"]["flow_sessions"]["Row"],
@@ -191,8 +240,24 @@ export async function resumeSession(
     return;
   }
 
-  const nodes = flow.nodes as unknown as FlowNode[];
-  const edges = flow.edges as unknown as FlowEdge[];
+  let graphNodes = flow.nodes;
+  let graphEdges = flow.edges;
+  if (session.published_version && session.published_version !== flow.version) {
+    const { data: version } = await supabase
+      .from("flow_versions")
+      .select("nodes, edges")
+      .eq("flow_id", session.flow_id)
+      .eq("version", session.published_version)
+      .maybeSingle();
+    if (!version) {
+      await cancelUnresumableSession(supabase, session.id, `published version ${session.published_version} no longer exists`);
+      return;
+    }
+    graphNodes = version.nodes;
+    graphEdges = version.edges;
+  }
+  const nodes = graphNodes as unknown as FlowNode[];
+  const edges = graphEdges as unknown as FlowEdge[];
   context.publishedVersion = session.published_version ?? flow.version;
 
   const { data: channel } = await supabase
@@ -643,7 +708,7 @@ async function executeSendMessage(
           node.id,
           hasNextNode
         );
-        return hasNextNode ? "pause" : undefined;
+        return hasNextNode && Boolean(data.messages[0]?.options?.[0]) ? "pause" : undefined;
       }
       console.error("No late_conversation_id found for conversation:", context.conversationId);
       return;
@@ -652,6 +717,7 @@ async function executeSendMessage(
   }
 
   let waitsForOption = false;
+  let acceptedOptionIds: string[] = [];
   for (const msg of data.messages) {
     const options = msg.options ?? [];
     const version = context.publishedVersion ?? 1;
@@ -730,7 +796,10 @@ async function executeSendMessage(
         contact_id: context.contactId,
         event_type: "message_sent",
       });
-      waitsForOption ||= options.length > 0;
+      if (options.length > 0) {
+        waitsForOption = true;
+        acceptedOptionIds = options.map((option) => option.id);
+      }
     } catch (error) {
       console.error("Failed to send message:", error);
       await supabase.from("messages").insert({
@@ -756,7 +825,6 @@ async function executeSendMessage(
     }
   }
   if (waitsForOption) {
-    const acceptedOptionIds = data.messages.flatMap((message) => message.options ?? []).map((option) => option.id);
     const expiresAt = new Date(Date.now() + (data.interactionTimeoutHours || 24) * 60 * 60 * 1000).toISOString();
     const { error } = await supabase.from("flow_sessions").update({
       waiting_for_input: true,

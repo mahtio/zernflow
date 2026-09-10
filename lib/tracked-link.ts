@@ -31,7 +31,10 @@ export function createTrackedLinkToken(
   }
   const payload: TrackedLinkPayload = {
     ...input,
-    expiresAt: input.expiresAt ?? Date.now() + 24 * 60 * 60 * 1000,
+    // Historical buttons can remain clickable. Authentication still binds the
+    // immutable destination, flow version and option; internal execution is
+    // independently idempotent when the click arrives.
+    expiresAt: input.expiresAt ?? Date.now() + 365 * 24 * 60 * 60 * 1000,
     nonce: input.nonce ?? randomBytes(18).toString("base64url"),
   };
   const iv = randomBytes(12);

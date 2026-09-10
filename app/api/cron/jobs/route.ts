@@ -227,7 +227,13 @@ async function failJobAndSettleSession({
     if (!payload?.sessionId) return;
     await supabase
       .from("flow_sessions")
-      .update({ status: "cancelled", waiting_for_input: false, waiting_until: null })
+      .update({
+        status: "cancelled",
+        waiting_for_input: false,
+        waiting_until: null,
+        wait_expires_at: null,
+        ended_reason: "expiration_job_failed",
+      })
       .eq("id", payload.sessionId)
       .eq("status", "active");
     return;

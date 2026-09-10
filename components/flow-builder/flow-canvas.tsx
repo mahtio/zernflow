@@ -27,7 +27,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { Database, FlowStatus, Json } from "@/lib/types/database";
 import type { FlowEdge, FlowNode, SendMessageNodeData } from "@/lib/flow-engine/types";
 import { normalizeCommentPrivateReplies } from "@/lib/flow-engine/comment-private-reply";
-import { findMessageOption, normalizeFlowMessageOptions, optionIdFromHandle, reachablePathCanSend } from "@/lib/flow-engine/message-options";
+import { findMessageOption, normalizeFlowMessageOptions, optionIdFromHandle, reachablePathCanSend, validateMessageOptionGraph } from "@/lib/flow-engine/message-options";
 
 import { NodePalette } from "./node-palette";
 import { TriggerNode } from "./nodes/trigger-node";
@@ -70,7 +70,7 @@ function getDefaultData(type: string, actionType?: string): Record<string, unkno
     case "trigger":
       return { triggerType: "keyword", keywords: [] };
     case "sendMessage":
-      return { messages: [] };
+      return { messages: [{ text: "", interactionMode: "none", options: [] }] };
     case "condition":
       return { conditions: [], logic: "and" };
     case "delay":
@@ -174,10 +174,26 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
           return;
         }
       }
+      const proposedEdges = [
+        ...edges,
+        {
+          id: "pending",
+          source: connection.source!,
+          target: connection.target!,
+          sourceHandle: connection.sourceHandle ?? undefined,
+        },
+      ] as unknown as FlowEdge[];
+      const invalidPath = validateMessageOptionGraph(nodes as unknown as FlowNode[], proposedEdges)
+        .find((issue) => issue.code === "unsafe_message_path" || issue.code === "multiple_option_edges");
+      if (invalidPath) {
+        setSaveError(invalidPath.message);
+        setTimeout(() => setSaveError(null), 5000);
+        return;
+      }
       if (sourceIsCommentTrigger && target) {
         const normalized = normalizeCommentPrivateReplies(
           nodes as unknown as FlowNode[],
-          [...edges, { id: "pending", source: source.id, target: target.id }] as unknown as FlowEdge[],
+          proposedEdges,
           flow.id
         );
         setNodes(normalized.nodes as unknown as Node[]);
@@ -336,6 +352,12 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
     }
   }, [flow.id, router]);
   const handlePublish = useCallback(async () => {
+    const graphIssues = validateMessageOptionGraph(nodes as unknown as FlowNode[], edges as unknown as FlowEdge[]);
+    if (graphIssues.length > 0) {
+      setSaveError(graphIssues[0].message);
+      setTimeout(() => setSaveError(null), 7000);
+      return;
+    }
     setPublishing(true);
     try {
       // First save the current state
@@ -359,7 +381,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
     } finally {
       setPublishing(false);
     }
-  }, [saveFlow, flow.id, pt, router, setNodes]);
+  }, [edges, nodes, saveFlow, flow.id, pt, router, setNodes]);
 
   return (
     <div className="flex h-full flex-col">

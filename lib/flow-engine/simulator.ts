@@ -25,8 +25,11 @@ export type SimulationStepResult =
   | {
       type: "message";
       texts: string[];
-      buttons?: { title: string }[];
-      quickReplies?: { title: string }[];
+      options?: Array<{ id: string; title: string; kind: "postback" | "url" | "quick_reply" }>;
+      selectedOptionId?: string;
+      waitingForChoice: boolean;
+      dmWindowOpen: boolean;
+      warning?: string;
     }
   | { type: "condition"; conditions: string[]; result: boolean; path: string }
   | { type: "delay"; duration: number; unit: string }
@@ -46,6 +49,8 @@ export type SimulationStepResult =
 
 export interface SimulationConfig {
   incomingMessage: string;
+  selectedOptionId?: string;
+  interactionType?: "postback" | "quick_reply" | "link" | "message" | "reaction";
   mockContact?: {
     tags?: string[];
     customFields?: Record<string, string>;
@@ -198,12 +203,14 @@ export function simulateFlow(
 
     switch (node.type) {
       case "sendMessage": {
-        const messages = (data.messages as Array<{ type?: string; text?: string; imageUrl?: string }>) || [];
-        const texts = messages
-          .filter((m) => m.text)
-          .map((m) => interpolate(m.text!, variables));
-        const buttons = (data.buttons as Array<{ title: string }>) || [];
-        const quickReplies = (data.quickReplies as Array<{ title: string }>) || [];
+        const messages = (data.messages as Array<{
+          text?: string;
+          options?: Array<{ id: string; title: string; kind: "postback" | "url" | "quick_reply" }>;
+        }>) || [];
+        const texts = messages.filter((m) => m.text).map((m) => interpolate(m.text!, variables));
+        const options = messages.flatMap((message) => message.options ?? []);
+        const selected = options.find((option) => option.id === config.selectedOptionId);
+        const privateWithoutWindow = data.deliveryMode === "private_reply" && selected?.kind !== "postback";
         steps.push({
           nodeId: node.id,
           nodeType: "sendMessage",
@@ -211,10 +218,19 @@ export function simulateFlow(
           result: {
             type: "message",
             texts: texts.length > 0 ? texts : ["(empty message)"],
-            buttons: buttons.length > 0 ? buttons : undefined,
-            quickReplies: quickReplies.length > 0 ? quickReplies : undefined,
+            options: options.length > 0 ? options : undefined,
+            selectedOptionId: selected?.id,
+            waitingForChoice: options.length > 0 && !selected,
+            dmWindowOpen: selected?.kind === "postback" || selected?.kind === "quick_reply",
+            warning: selected?.kind === "url" || privateWithoutWindow
+              ? "Este caminho não abre a janela de DM e não pode enviar mensagens."
+              : undefined,
           },
         });
+        if (options.length > 0) {
+          if (!selected) shouldPause = true;
+          else nextHandle = `option:${selected.id}`;
+        }
         break;
       }
 
