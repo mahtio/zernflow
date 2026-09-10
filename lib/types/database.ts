@@ -876,6 +876,7 @@ export interface Database {
           role: string;
           invited_by: string;
           status: string;
+          auth_mode: "login" | "register";
           created_at: string;
           expires_at: string;
         };
@@ -886,6 +887,7 @@ export interface Database {
           role?: string;
           invited_by: string;
           status?: string;
+          auth_mode: "login" | "register";
           created_at?: string;
           expires_at?: string;
         };
@@ -893,6 +895,7 @@ export interface Database {
           email?: string;
           role?: string;
           status?: string;
+          auth_mode?: "login" | "register";
           expires_at?: string;
         };
         Relationships: [
@@ -1090,6 +1093,14 @@ export interface Database {
           new_owner_id: string;
         };
         Returns: undefined;
+      };
+      accept_workspace_invite: {
+        Args: {
+          target_invite_id: string;
+          target_user_id: string;
+          target_email: string;
+        };
+        Returns: string;
       };
       increment_unread: {
         Args: {

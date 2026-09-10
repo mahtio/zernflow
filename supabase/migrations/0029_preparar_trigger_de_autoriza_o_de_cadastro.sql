@@ -1,0 +1,1 @@
+DROP TRIGGER IF EXISTS enforce_invite_only_signup ON auth.users;

@@ -3,9 +3,11 @@ import "server-only";
 import type { User } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { createServiceClient } from "@/lib/supabase/server";
+import type { InviteAuthMode } from "@/lib/invite-paths";
 import { WORKSPACE_COOKIE } from "@/lib/workspace";
 
-export type InviteAuthMode = "login" | "register";
+export type { InviteAuthMode } from "@/lib/invite-paths";
+export { inviteAuthPath, safeInternalPath } from "@/lib/invite-paths";
 export type InviteInvalidReason = "not-found" | "expired" | "accepted" | "revoked";
 
 export interface InviteContext {
@@ -20,15 +22,6 @@ export interface InviteContext {
 export type InviteContextResult =
   | { ok: true; invite: InviteContext }
   | { ok: false; reason: InviteInvalidReason };
-
-export function inviteAuthPath(invite: Pick<InviteContext, "id" | "authMode">) {
-  return `/${invite.authMode}?invite=${encodeURIComponent(invite.id)}`;
-}
-
-export function safeInternalPath(value: string | null, fallback = "/dashboard") {
-  if (!value || !value.startsWith("/") || value.startsWith("//")) return fallback;
-  return value;
-}
 
 export async function findAuthUserByEmail(email: string): Promise<User | null> {
   const serviceClient = await createServiceClient();

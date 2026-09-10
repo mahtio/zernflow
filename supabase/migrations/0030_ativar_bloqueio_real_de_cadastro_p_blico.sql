@@ -1,0 +1,1 @@
+CREATE TRIGGER enforce_invite_only_signup BEFORE INSERT ON auth.users FOR EACH ROW EXECUTE FUNCTION public.enforce_invite_only_signup();

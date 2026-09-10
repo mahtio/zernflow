@@ -41,12 +41,11 @@ export async function updateSession(request: NextRequest) {
     return supabaseResponse;
   }
 
-  // Redirect logged-in users away from auth pages to dashboard
-  if (user && isAuthPage) {
+  // Convites precisam permanecer nas páginas de autenticação até a conclusão.
+  if (user && isAuthPage && !request.nextUrl.searchParams.has("invite")) {
     const url = request.nextUrl.clone();
     url.pathname = "/dashboard";
     const redirectResponse = NextResponse.redirect(url);
-    // Forward any refreshed session cookies
     supabaseResponse.cookies.getAll().forEach((cookie) => {
       redirectResponse.cookies.set(cookie.name, cookie.value);
     });

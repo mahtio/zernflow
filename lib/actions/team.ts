@@ -160,7 +160,7 @@ export async function registerWithInvite(
   const { data, error } = await supabase.auth.signUp({
     email: context.invite.email,
     password,
-    options: { data: { full_name: name }, emailRedirectTo },
+    options: { data: { full_name: name, invite_id: inviteId }, emailRedirectTo },
   });
 
   if (error) {

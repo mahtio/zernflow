@@ -248,27 +248,36 @@ export async function POST(request: NextRequest) {
     let responseData: { data?: { messageId?: string } };
 
     if (file) {
-      const zernioFormData = new FormData();
-      zernioFormData.set("accountId", channel.late_account_id);
-      if (text) zernioFormData.set("message", text);
-      zernioFormData.set("attachmentType", attachmentType(file));
-      zernioFormData.set("file", file, file.name);
+      const uploadFormData = new FormData();
+      uploadFormData.set("file", file, file.name);
+      uploadFormData.set("contentType", file.type);
 
-      const response = await fetch(
-        `https://zernio.com/api/v1/inbox/conversations/${encodeURIComponent(conversation.late_conversation_id)}/messages`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${workspace.late_api_key_encrypted}`,
-            "Idempotency-Key": crypto.randomUUID(),
-          },
-          body: zernioFormData,
-        }
-      );
-      responseData = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error((responseData as { error?: string }).error ?? `Upload failed (${response.status})`);
+      const uploadResponse = await fetch("https://zernio.com/api/v1/media/upload-direct", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${workspace.late_api_key_encrypted}` },
+        body: uploadFormData,
+      });
+      const uploadData = await uploadResponse.json().catch(() => ({})) as {
+        url?: string;
+        error?: string;
+      };
+      if (!uploadResponse.ok || !uploadData.url) {
+        throw new Error(uploadData.error ?? `Upload failed (${uploadResponse.status})`);
       }
+
+      const zernio = createZernioClient(workspace.late_api_key_encrypted);
+      const response = await zernio.messages.sendInboxMessage({
+        path: { conversationId: conversation.late_conversation_id },
+        headers: { "Idempotency-Key": crypto.randomUUID() },
+        body: {
+          accountId: channel.late_account_id,
+          message: text || undefined,
+          attachmentUrl: uploadData.url,
+          attachmentType: attachmentType(file),
+          attachmentName: attachmentType(file) === "file" ? file.name : undefined,
+        },
+      });
+      responseData = response.data as { data?: { messageId?: string } };
     } else {
       const zernio = createZernioClient(workspace.late_api_key_encrypted);
       const response = await zernio.messages.sendInboxMessage({
