@@ -54,17 +54,20 @@ export function InboxView({
 
   // Keep selected conversation in sync when conversation list updates
   const handleSelect = useCallback((c: Conversation) => {
+    setMessages([]);
     setSelected(c);
   }, []);
 
-  // Update selected conversation metadata when conversations change in the sidebar
+  const handleConversationUpdate = useCallback((updated: Conversation) => {
+    setSelected((current) => current?.id === updated.id ? updated : current);
+  }, []);
+
+  // Update selected conversation metadata when server-rendered conversations change.
   useEffect(() => {
     if (!selected) return;
     const found = conversations.find((c) => c.id === selected.id);
-    if (found && (found.unread_count !== selected.unread_count || found.last_message_at !== selected.last_message_at)) {
-      setSelected(found);
-    }
-  }, [conversations, selected]);
+    if (found) setSelected(found);
+  }, [conversations, selected?.id]);
 
   // Load messages when a conversation is selected
   useEffect(() => {
@@ -73,37 +76,46 @@ export function InboxView({
       return;
     }
 
+    const conversationId = selected.id;
+    let cancelled = false;
+
     async function loadMessages() {
       setLoadingMessages(true);
       try {
         const res = await fetch(
-          `/api/v1/messages?conversationId=${selected!.id}`
+          `/api/v1/messages?conversationId=${conversationId}`,
+          { cache: "no-store" }
         );
+        if (cancelled) return;
         if (res.ok) {
           const data = await res.json();
-          setMessages(data ?? []);
+          setMessages(Array.isArray(data) ? data : []);
         } else {
           console.error("Failed to load messages:", res.status);
           setMessages([]);
         }
       } catch (err) {
+        if (cancelled) return;
         console.error("Failed to load messages:", err);
         setMessages([]);
       } finally {
-        setLoadingMessages(false);
+        if (!cancelled) setLoadingMessages(false);
       }
 
       // Mark as read
-      if (selected!.unread_count > 0) {
+      if (selected.unread_count > 0) {
         const supabase = createClient();
         await supabase
           .from("conversations")
           .update({ unread_count: 0 })
-          .eq("id", selected!.id);
+          .eq("id", conversationId);
       }
     }
 
     loadMessages();
+    return () => {
+      cancelled = true;
+    };
   }, [selected?.id]);
 
   return (
@@ -115,6 +127,7 @@ export function InboxView({
           workspaceId={workspaceId}
           selectedId={selected?.id ?? null}
           onSelect={handleSelect}
+          onConversationUpdate={handleConversationUpdate}
         />
       </div>
 
@@ -155,15 +168,19 @@ export function InboxView({
                 <p className="mt-2 text-xs text-destructive">{syncError}</p>
               )}
             </div>
-          ) : loadingMessages && selected ? (
-            <div className="flex h-full items-center justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
-            </div>
           ) : (
-            <MessageThread
-              conversation={selected}
-              messages={messages}
-            />
+            <div className="relative h-full">
+              <MessageThread
+                key={selected?.id ?? "empty"}
+                conversation={selected}
+                messages={messages}
+              />
+              {loadingMessages && selected && messages.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center bg-background">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>

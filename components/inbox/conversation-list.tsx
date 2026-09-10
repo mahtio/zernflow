@@ -34,11 +34,13 @@ export function ConversationList({
   workspaceId,
   selectedId,
   onSelect,
+  onConversationUpdate,
 }: {
   conversations: Conversation[];
   workspaceId: string;
   selectedId: string | null;
   onSelect: (conversation: Conversation) => void;
+  onConversationUpdate: (conversation: Conversation) => void;
 }) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
@@ -55,6 +57,12 @@ export function ConversationList({
   useEffect(() => {
     setConversations(initialConversations);
   }, [initialConversations]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    const selected = conversations.find((conversation) => conversation.id === selectedId);
+    if (selected) onConversationUpdate(selected);
+  }, [conversations, selectedId, onConversationUpdate]);
 
   // Subscribe to conversation updates via Realtime
   useEffect(() => {
@@ -75,7 +83,11 @@ export function ConversationList({
             const updated = payload.new as Database["public"]["Tables"]["conversations"]["Row"];
             setConversations((prev) =>
               prev
-                .map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+                .map((conversation) =>
+                  conversation.id === updated.id
+                    ? { ...conversation, ...updated }
+                    : conversation
+                )
                 .sort((a, b) => {
                   const aTime = a.last_message_at ?? a.created_at;
                   const bTime = b.last_message_at ?? b.created_at;

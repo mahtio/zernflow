@@ -257,6 +257,25 @@ function hasRenderableContent(message: Message): boolean {
   return Boolean(message.text?.trim()) || getAttachments(message.attachments, message.id, message.conversation_id).length > 0;
 }
 
+function mergeMessages(current: Message[], fresh: Message[]): Message[] {
+  const byId = new Map(current.map((message) => [message.id, message]));
+
+  for (const message of fresh) {
+    const optimisticMatch = current.find(
+      (candidate) =>
+        candidate.id.startsWith("optimistic-") &&
+        candidate.direction === message.direction &&
+        candidate.text === message.text
+    );
+    if (optimisticMatch) byId.delete(optimisticMatch.id);
+    byId.set(message.id, message);
+  }
+
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+}
+
 function MessageBubble({ message, locale, pt }: { message: Message; locale: string; pt: boolean }) {
   const isInbound = message.direction === "inbound";
   const isBot = message.sent_by_flow_id !== null;
@@ -397,7 +416,7 @@ export function MessageThread({
   }, []);
 
   useEffect(() => {
-    setMessages(initialMessages);
+    setMessages((current) => mergeMessages(current, initialMessages));
   }, [initialMessages]);
 
   // Clean up blob URLs when unmounting
@@ -490,16 +509,14 @@ export function MessageThread({
         },
         async () => {
           try {
-            const res = await fetch(`/api/v1/messages?conversationId=${conversationId}`);
+            const res = await fetch(
+              `/api/v1/messages?conversationId=${conversationId}`,
+              { cache: "no-store" }
+            );
             if (res.ok) {
               const fresh = await res.json();
               if (Array.isArray(fresh)) {
-                setMessages((prev) => {
-                  const optimistic = prev.filter((m) => m.id.startsWith("optimistic-"));
-                  const knownIds = new Set(fresh.map((m: Message) => m.id));
-                  const remainingOptimistic = optimistic.filter((m) => !knownIds.has(m.id));
-                  return [...fresh, ...remainingOptimistic];
-                });
+                setMessages((current) => mergeMessages(current, fresh));
               }
             }
           } catch (err) {
@@ -512,19 +529,14 @@ export function MessageThread({
     const pollInterval = setInterval(async () => {
       if (document.visibilityState !== "visible") return;
       try {
-        const res = await fetch(`/api/v1/messages?conversationId=${conversationId}`);
+        const res = await fetch(
+          `/api/v1/messages?conversationId=${conversationId}`,
+          { cache: "no-store" }
+        );
         if (res.ok) {
           const fresh = await res.json();
-          if (Array.isArray(fresh) && fresh.length > 0) {
-            setMessages((prev) => {
-              if (prev.length !== fresh.length || fresh[fresh.length - 1]?.id !== prev[prev.length - 1]?.id) {
-                const optimistic = prev.filter((m) => m.id.startsWith("optimistic-"));
-                const knownIds = new Set(fresh.map((m: Message) => m.id));
-                const remainingOptimistic = optimistic.filter((m) => !knownIds.has(m.id));
-                return [...fresh, ...remainingOptimistic];
-              }
-              return prev;
-            });
+          if (Array.isArray(fresh)) {
+            setMessages((current) => mergeMessages(current, fresh));
           }
         }
       } catch {
