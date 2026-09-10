@@ -24,6 +24,14 @@ interface CommentKeywordConfig {
   replyText?: string;
 }
 
+function normalizeCommentText(value: string): string {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/\b0+(\d+)(?=[/.]\d)/g, "$1")
+    .replace(/([/.])0+(\d+)\b/g, "$1$2");
+}
+
 /**
  * Returns the first trigger whose keywords match the comment text, honoring
  * per-keyword matchType and optional postIds scoping. Triggers are checked in
@@ -33,7 +41,7 @@ export function matchCommentTrigger(
   triggers: Trigger[],
   comment: CommentForMatching,
 ): Trigger | null {
-  const text = comment.text.toLowerCase().trim();
+  const text = normalizeCommentText(comment.text);
   if (!text) return null;
 
   for (const trigger of triggers) {
@@ -42,7 +50,7 @@ export function matchCommentTrigger(
     if (config.postIds?.length && !config.postIds.includes(comment.postId)) continue;
 
     for (const kw of config.keywords) {
-      const keyword = kw.value.toLowerCase();
+      const keyword = normalizeCommentText(kw.value);
       const matchType = kw.matchType || "contains";
       if (matchType === "exact" && text === keyword) return trigger;
       if (matchType === "contains" && text.includes(keyword)) return trigger;

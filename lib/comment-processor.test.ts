@@ -40,6 +40,11 @@ describe("matchCommentTrigger", () => {
     expect(matchCommentTrigger([t], comment("more info"))).toBeNull();
   });
 
+  it("treats zero-padded dates as equivalent", () => {
+    const t = trigger("t1", { keywords: [{ value: "Portal 09/09" }] });
+    expect(matchCommentTrigger([t], comment("Portal 9/9"))?.id).toBe("t1");
+  });
+
   it("returns the first matching trigger in array order (caller pre-sorts by priority)", () => {
     const low = trigger("low", { keywords: [{ value: "deal" }] });
     const high = trigger("high", { keywords: [{ value: "deal" }] });

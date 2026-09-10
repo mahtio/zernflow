@@ -5,6 +5,7 @@ import { resolveWebhookSecret, verifyWebhookSignature } from "@/lib/zernio-webho
 import { executeFlow } from "@/lib/flow-engine/engine";
 import { messagePreview } from "@/lib/message-preview";
 import { upsertContactForSender } from "@/lib/inbox-sync";
+import { processComment } from "@/lib/comment-processor";
 import type { Database } from "@/lib/types/database";
 
 interface WebhookPayload {
@@ -485,87 +486,22 @@ async function processCommentEvent(
   channel: Database["public"]["Tables"]["channels"]["Row"]
 ) {
   const { comment } = payload;
-
-  const contact = await upsertContactForSender({
+  const result = await processComment({
     supabase,
     channel,
-    senderId: comment.sender.id,
-    senderName: comment.sender.name || comment.sender.username,
-    senderPicture: comment.sender.picture || null,
-    senderUsername: comment.sender.username || null,
-    interactionAt: new Date().toISOString(),
-  });
-
-  if (!contact) {
-    console.error("Failed to create contact for comment");
-    return;
-  }
-
-  const contactId = contact.contactId;
-
-  const { data: flows } = await supabase
-    .from("flows")
-    .select("*")
-    .eq("workspace_id", channel.workspace_id)
-    .eq("status", "published");
-
-  if (!flows?.length) return;
-
-  for (const flow of flows) {
-    const nodes = (flow.nodes as Array<{
-      id: string;
-      type: string;
-      data?: Record<string, unknown>;
-    }>) || [];
-
-    const commentTrigger = nodes.find(
-      (n) =>
-        n.type === "trigger" &&
-        (n.data?.triggerType === "comment_received" ||
-          n.data?.triggerType === "post_comment")
-    );
-
-    if (!commentTrigger) continue;
-
-    const triggerData = commentTrigger.data || {};
-    if (
-      triggerData.mediaId &&
-      triggerData.mediaId !== comment.mediaId
-    ) {
-      continue;
-    }
-
-    if (triggerData.keywords && Array.isArray(triggerData.keywords) && triggerData.keywords.length > 0) {
-      const commentLower = comment.text.toLowerCase();
-      const matches = (triggerData.keywords as string[]).some((kw: string) =>
-        commentLower.includes(kw.toLowerCase().trim())
-      );
-      if (!matches) continue;
-    }
-
-    await executeFlow(supabase, {
-      triggerId: commentTrigger.id,
-      flowId: flow.id,
-      channelId: channel.id,
-      contactId,
-      conversationId: "",
-      workspaceId: channel.workspace_id,
-      incomingMessage: {
-        text: comment.text,
-        sender: {
-          id: comment.sender.id,
-          name: comment.sender.name || comment.sender.username,
-          username: comment.sender.username,
-        },
-      },
-      variables: {
-        comment_id: comment.id,
-        post_id: comment.mediaId,
-        comment_text: comment.text,
+    comment: {
+      id: comment.id,
+      postId: comment.mediaId,
+      text: comment.text,
+      author: {
+        id: comment.sender.id,
+        name: comment.sender.name,
         username: comment.sender.username,
       },
-    });
+    },
+  });
 
-    break;
+  if (result.error) {
+    console.error("Comment automation failed:", result.error);
   }
 }
