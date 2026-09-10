@@ -390,7 +390,13 @@ async function processJob(
       // already cleared waiting_for_input/waiting_until, so stale jobs no-op.
       const { error } = await supabase
         .from("flow_sessions")
-        .update({ status: "expired", waiting_for_input: false, waiting_until: null })
+        .update({
+          status: "expired",
+          waiting_for_input: false,
+          waiting_until: null,
+          wait_expires_at: null,
+          ended_reason: "timeout",
+        })
         .eq("id", payload.sessionId)
         .eq("status", "active")
         .eq("waiting_for_input", true)

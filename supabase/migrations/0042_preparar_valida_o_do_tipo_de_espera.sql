@@ -1,0 +1,1 @@
+ALTER TABLE public.flow_sessions DROP CONSTRAINT IF EXISTS flow_sessions_waiting_type_check;

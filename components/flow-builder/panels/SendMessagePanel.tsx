@@ -1,9 +1,11 @@
 "use client";
 
 import { useCallback, useRef } from "react";
-import { Plus, X, GripVertical, Image, Type, MousePointer, MessageCircle, LayoutGrid } from "lucide-react";
+import { Plus, X, GripVertical, Image, Type, MousePointer, MessageCircle, LayoutGrid, ExternalLink, GitBranch } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/components/locale-provider";
+import { createMessageOptionId } from "@/lib/flow-engine/message-options";
+import type { MessageInteractionMode, MessageOption } from "@/lib/flow-engine/types";
 
 interface QuickReply {
   title: string;
@@ -33,6 +35,8 @@ interface Message {
   imageUrl?: string;
   mediaUrl?: string;
   mediaType?: "image" | "video" | "audio";
+  interactionMode?: MessageInteractionMode;
+  options?: MessageOption[];
   privateReplyButton?: {
     type: "postback" | "url";
     title: string;
@@ -187,13 +191,18 @@ function PrivateReplyEditor({
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const message = data.messages?.[0] || { text: "" };
-  const button = message.privateReplyButton || { type: "postback" as const, title: "Continuar" };
+  const message = data.messages?.[0] || { text: "", interactionMode: "none", options: [] };
+  const button = message.options?.[0];
   const update = (nextMessage: Message) => onChange({
     ...data,
     deliveryMode: "private_reply",
     interactionTimeoutHours: 24,
     messages: [nextMessage],
+  });
+  const setButtonEnabled = (enabled: boolean) => update({
+    ...message,
+    interactionMode: enabled ? "buttons" : "none",
+    options: enabled ? [button || { id: createMessageOptionId(), title: "Continuar", kind: "postback" }] : [],
   });
   const insertVariable = (variable: string) => {
     const token = `{{${variable}}}`;
@@ -233,51 +242,37 @@ function PrivateReplyEditor({
         />
         <p className="mt-1 text-[11px] text-muted-foreground">{pt ? "A publicação avisará caso o canal não aceite imagem na resposta privada." : "Publishing will report if the channel does not support private-reply images."}</p>
       </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Texto do botão" : "Button text"}</label>
-        <input
-          type="text"
-          value={button.title}
-          maxLength={20}
-          onChange={(event) => update({ ...message, privateReplyButton: { ...button, title: event.target.value } })}
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-      </div>
-      <div>
-        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Ação do botão" : "Button action"}</label>
-        <select
-          value={button.type}
-          onChange={(event) => update({
-            ...message,
-            privateReplyButton: {
-              type: event.target.value as "postback" | "url",
-              title: button.title,
-              destinationUrl: event.target.value === "url" ? button.destinationUrl : undefined,
-              payload: event.target.value === "postback" ? button.payload : undefined,
-            },
-          })}
-          className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="postback">{pt ? "Continuar fluxo" : "Continue flow"}</option>
-          <option value="url">{pt ? "Abrir link" : "Open link"}</option>
-        </select>
-      </div>
-      {button.type === "url" && (
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "URL de destino" : "Destination URL"}</label>
-          <input
-            type="url"
-            value={button.destinationUrl || ""}
-            onChange={(event) => update({ ...message, privateReplyButton: { ...button, destinationUrl: event.target.value } })}
-            placeholder="https://example.com"
-            className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-          />
-        </div>
+      <label className="flex items-center gap-2 text-sm font-medium">
+        <input type="checkbox" checked={Boolean(button)} onChange={(event) => setButtonEnabled(event.target.checked)} />
+        {pt ? "Adicionar botão" : "Add button"}
+      </label>
+      {button && (
+        <>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Texto do botão" : "Button text"}</label>
+            <input type="text" value={button.title} maxLength={20} onChange={(event) => update({ ...message, options: [{ ...button, title: event.target.value }] })} className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Ação do botão" : "Button action"}</label>
+            <select value={button.kind} onChange={(event) => update({ ...message, options: [{ ...button, kind: event.target.value as "postback" | "url", destinationUrl: event.target.value === "url" ? button.destinationUrl : undefined }] })} className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="postback">{pt ? "Continuar no fluxo" : "Continue flow"}</option>
+              <option value="url">{pt ? "Abrir página" : "Open page"}</option>
+            </select>
+          </div>
+          {button.kind === "url" && (
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "URL HTTPS de destino" : "HTTPS destination URL"}</label>
+              <input type="url" value={button.destinationUrl || ""} onChange={(event) => update({ ...message, options: [{ ...button, destinationUrl: event.target.value }] })} placeholder="https://example.com" className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+            </div>
+          )}
+        </>
       )}
       <div className="rounded-lg border border-border bg-muted p-3 text-xs text-muted-foreground">
-        {button.type === "postback"
-          ? (pt ? "O fluxo continuará quando o contato clicar neste botão ou responder à mensagem." : "The flow continues when the contact clicks this button or replies.")
-          : (pt ? "O link será aberto por um redirecionamento seguro. Se houver um próximo nó conectado, o clique também continuará o fluxo." : "The link opens through a secure redirect. If a next node is connected, the click also continues the flow.")}
+        {!button
+          ? (pt ? "Sem botão, somente Lógica/Ações sem envio de mensagem podem continuar imediatamente." : "Without a button, only Logic/Actions that do not send messages may continue immediately.")
+          : button.kind === "postback"
+            ? (pt ? "O fluxo aguarda o clique. O postback recebido abre/renova a janela de mensagens e libera a continuação." : "The flow waits for the click. A received postback opens/renews the messaging window.")
+            : (pt ? "O clique é rastreado, não abre a janela da Meta e só pode seguir por Lógica/Ações sem envio." : "The click is tracked, does not open Meta's window, and may only continue through non-sending Logic/Actions.")}
       </div>
     </div>
   );
@@ -507,131 +502,78 @@ function MessageEditor({
               </p>
             </div>
 
-            {/* Quick Replies */}
-            <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <MessageCircle className="h-3 w-3 text-muted-foreground/60" />
-                  <label className="text-xs font-medium text-muted-foreground">
-                    {pt ? "Respostas rápidas" : "Quick Replies"}
-                  </label>
-                </div>
-                <button
-                  type="button"
-                  onClick={addQuickReply}
-                  className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950"
-                >
-                  <Plus className="h-3 w-3" />
-                  {pt ? "Adicionar" : "Add"}
-                </button>
-              </div>
-              {(message.quickReplies || []).map((qr, i) => (
-                <div key={i} className="mb-2 flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={qr.title}
-                    onChange={(e) => updateQuickReply(i, { ...qr, title: e.target.value })}
-                    placeholder={pt ? "Rótulo" : "Label"}
-                    className="flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <input
-                    type="text"
-                    value={qr.payload}
-                    onChange={(e) => updateQuickReply(i, { ...qr, payload: e.target.value })}
-                    placeholder={pt ? "Payload" : "Payload"}
-                    className="flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeQuickReply(i)}
-                    className="rounded p-1 text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Buttons */}
-            <div>
-              <div className="mb-1.5 flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <MousePointer className="h-3 w-3 text-muted-foreground/60" />
-                  <label className="text-xs font-medium text-muted-foreground">
-                    {pt ? "Botões" : "Buttons"}
-                  </label>
-                </div>
-                <button
-                  type="button"
-                  onClick={addButton}
-                  className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-950"
-                >
-                  <Plus className="h-3 w-3" />
-                  {pt ? "Adicionar" : "Add"}
-                </button>
-              </div>
-              {(message.buttons || []).map((btn, i) => (
-                <div
-                  key={i}
-                  className="mb-2 rounded-lg border border-border bg-muted p-2.5"
-                >
-                  <div className="mb-2 flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={btn.title}
-                      onChange={(e) => updateButton(i, { ...btn, title: e.target.value })}
-                      placeholder={pt ? "Rótulo do botão" : "Button label"}
-                      className="flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeButton(i)}
-                      className="rounded p-1 text-muted-foreground/60 hover:bg-muted hover:text-muted-foreground"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={btn.type}
-                      onChange={(e) => {
-                        const type = e.target.value as "postback" | "url";
-                        updateButton(i, {
-                          ...btn,
-                          type,
-                          payload: type === "postback" ? btn.payload || "" : undefined,
-                          url: type === "url" ? btn.url || "" : undefined,
-                        });
-                      }}
-                      className="rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    >
-                      <option value="postback">{pt ? "Postback" : "Postback"}</option>
-                      <option value="url">{pt ? "Link (URL)" : "URL"}</option>
-                    </select>
-                    {btn.type === "postback" ? (
-                      <input
-                        type="text"
-                        value={btn.payload || ""}
-                        onChange={(e) => updateButton(i, { ...btn, payload: e.target.value })}
-                        placeholder={pt ? "Valor do payload" : "Payload value"}
-                        className="flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    ) : (
-                      <input
-                        type="url"
-                        value={btn.url || ""}
-                        onChange={(e) => updateButton(i, { ...btn, url: e.target.value })}
-                        placeholder="https://..."
-                        className="flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                      />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <InteractionOptionsEditor message={message} onChange={onChange} pt={pt} />
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function InteractionOptionsEditor({ message, onChange, pt }: { message: Message; onChange: (message: Message) => void; pt: boolean }) {
+  const mode = message.interactionMode ?? ((message.buttons?.length ?? 0) > 0 ? "buttons" : (message.quickReplies?.length ?? 0) > 0 ? "quick_replies" : "none");
+  const options = message.options ?? [];
+  const changeMode = (next: MessageInteractionMode) => {
+    if (next === mode) return;
+    if (options.length > 0 && !window.confirm(pt ? "Trocar o modo remove as opções e pode invalidar conexões. Continuar?" : "Changing mode removes options and may invalidate connections. Continue?")) return;
+    onChange({ ...message, interactionMode: next, options: [], buttons: undefined, quickReplies: undefined });
+  };
+  const max = mode === "buttons" ? 3 : 10;
+  const addOption = () => {
+    if (mode === "none" || options.length >= max) return;
+    onChange({ ...message, options: [...options, { id: createMessageOptionId(), title: "", kind: mode === "buttons" ? "postback" : "quick_reply" }] });
+  };
+  const updateOption = (index: number, option: MessageOption) => {
+    const next = [...options];
+    next[index] = option;
+    onChange({ ...message, options: next });
+  };
+  const removeOption = (index: number) => {
+    if (!window.confirm(pt ? "Remover esta opção também removerá sua saída conectada ao salvar. Continuar?" : "Removing this option also removes its connected output when saved. Continue?")) return;
+    onChange({ ...message, options: options.filter((_, itemIndex) => itemIndex !== index) });
+  };
+  return (
+    <div className="space-y-3 border-t border-border pt-3">
+      <div>
+        <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{pt ? "Opções interativas" : "Interactive options"}</label>
+        <select value={mode} onChange={(event) => changeMode(event.target.value as MessageInteractionMode)} className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm">
+          <option value="none">{pt ? "Sem opções" : "No options"}</option>
+          <option value="buttons">{pt ? "Botões (até 3)" : "Buttons (up to 3)"}</option>
+          <option value="quick_replies">{pt ? "Respostas rápidas (até 10)" : "Quick replies (up to 10)"}</option>
+        </select>
+      </div>
+      {mode !== "none" && (
+        <>
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-muted-foreground">{mode === "quick_replies"
+              ? (pt ? "Temporárias, ideais para menus. Respostas livres com outro gatilho trocam de fluxo; as demais mantêm esta espera." : "Temporary and ideal for menus. Free replies matching another trigger switch flows; others keep this wait.")
+              : (pt ? "Botões permanecem anexados à mensagem." : "Buttons remain attached to the message.")}</p>
+            <span className="ml-2 shrink-0 text-[11px] font-medium">{options.length}/{max}</span>
+          </div>
+          {options.map((option, index) => (
+            <div key={option.id} className="rounded-lg border border-border bg-muted p-2.5">
+              <div className="flex gap-2">
+                <input value={option.title} maxLength={20} onChange={(event) => updateOption(index, { ...option, title: event.target.value })} placeholder={pt ? "Texto (máx. 20)" : "Text (max 20)"} className="min-w-0 flex-1 rounded border border-border bg-card px-2 py-1.5 text-xs" />
+                <button type="button" onClick={() => removeOption(index)} className="rounded p-1 text-muted-foreground hover:bg-card"><X className="h-3.5 w-3.5" /></button>
+              </div>
+              {mode === "buttons" && (
+                <div className="mt-2 space-y-2">
+                  <select value={option.kind} onChange={(event) => updateOption(index, { ...option, kind: event.target.value as "postback" | "url", destinationUrl: event.target.value === "url" ? option.destinationUrl : undefined })} className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs">
+                    <option value="postback">↳ {pt ? "Continuar no fluxo" : "Continue flow"}</option>
+                    <option value="url">↗ {pt ? "Abrir página" : "Open page"}</option>
+                  </select>
+                  {option.kind === "url" && <input type="url" value={option.destinationUrl || ""} onChange={(event) => updateOption(index, { ...option, destinationUrl: event.target.value })} placeholder="https://..." className="w-full rounded border border-border bg-card px-2 py-1.5 text-xs" />}
+                </div>
+              )}
+              <p className="mt-2 flex items-center gap-1 text-[10px] text-muted-foreground">
+                {option.kind === "url" ? <ExternalLink className="h-3 w-3" /> : option.kind === "quick_reply" ? <MessageCircle className="h-3 w-3" /> : <GitBranch className="h-3 w-3" />}
+                {pt ? "Saída no canvas" : "Canvas output"}: option:{option.id.slice(0, 10)}…
+              </p>
+            </div>
+          ))}
+          {options.length < max && <button type="button" onClick={addOption} className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-border py-2 text-xs font-medium text-blue-500"><Plus className="h-3.5 w-3.5" />{pt ? "Adicionar opção" : "Add option"}</button>}
+        </>
+      )}
     </div>
   );
 }

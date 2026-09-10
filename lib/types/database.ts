@@ -550,6 +550,17 @@ export interface Database {
           flow_stack: Json;
           waiting_until: string | null;
           waiting_for_input: boolean;
+          waiting_type: "message_option" | "private_reply" | null;
+          waiting_node_id: string | null;
+          published_version: number | null;
+          accepted_option_ids: Json;
+          wait_expires_at: string | null;
+          dm_window_opened_at: string | null;
+          consumed_event_id: string | null;
+          ended_reason: string | null;
+          successor_session_id: string | null;
+          predecessor_session_id: string | null;
+          selected_option_id: string | null;
           human_takeover_at: string | null;
           created_at: string;
           updated_at: string;
@@ -565,6 +576,17 @@ export interface Database {
           flow_stack?: Json;
           waiting_until?: string | null;
           waiting_for_input?: boolean;
+          waiting_type?: "message_option" | "private_reply" | null;
+          waiting_node_id?: string | null;
+          published_version?: number | null;
+          accepted_option_ids?: Json;
+          wait_expires_at?: string | null;
+          dm_window_opened_at?: string | null;
+          consumed_event_id?: string | null;
+          ended_reason?: string | null;
+          successor_session_id?: string | null;
+          predecessor_session_id?: string | null;
+          selected_option_id?: string | null;
           human_takeover_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -576,6 +598,17 @@ export interface Database {
           flow_stack?: Json;
           waiting_until?: string | null;
           waiting_for_input?: boolean;
+          waiting_type?: "message_option" | "private_reply" | null;
+          waiting_node_id?: string | null;
+          published_version?: number | null;
+          accepted_option_ids?: Json;
+          wait_expires_at?: string | null;
+          dm_window_opened_at?: string | null;
+          consumed_event_id?: string | null;
+          ended_reason?: string | null;
+          successor_session_id?: string | null;
+          predecessor_session_id?: string | null;
+          selected_option_id?: string | null;
           human_takeover_at?: string | null;
           updated_at?: string;
         };
@@ -1137,6 +1170,15 @@ export interface Database {
           b_id: string;
         };
         Returns: undefined;
+      };
+      supersede_waiting_flow_session: {
+        Args: {
+          p_session_id: string;
+          p_event_id: string;
+          p_new_flow_id: string;
+          p_trigger_id?: string | null;
+        };
+        Returns: string | null;
       };
     };
     Enums: {

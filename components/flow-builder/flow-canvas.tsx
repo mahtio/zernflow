@@ -25,8 +25,9 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useLocale } from "@/components/locale-provider";
 import { createClient } from "@/lib/supabase/client";
 import type { Database, FlowStatus, Json } from "@/lib/types/database";
-import type { FlowEdge, FlowNode } from "@/lib/flow-engine/types";
+import type { FlowEdge, FlowNode, SendMessageNodeData } from "@/lib/flow-engine/types";
 import { normalizeCommentPrivateReplies } from "@/lib/flow-engine/comment-private-reply";
+import { findMessageOption, normalizeFlowMessageOptions, optionIdFromHandle, reachablePathCanSend } from "@/lib/flow-engine/message-options";
 
 import { NodePalette } from "./node-palette";
 import { TriggerNode } from "./nodes/trigger-node";
@@ -99,8 +100,9 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
   const initialEdges: Edge[] = Array.isArray(flow.edges)
     ? (flow.edges as unknown as Edge[])
     : [];
+  const optionNormalization = normalizeFlowMessageOptions(rawInitialNodes as unknown as FlowNode[]);
   const initialNormalization = normalizeCommentPrivateReplies(
-    rawInitialNodes as unknown as FlowNode[],
+    optionNormalization.nodes,
     initialEdges as unknown as FlowEdge[],
     flow.id
   );
@@ -116,7 +118,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
   const [versionPanelOpen, setVersionPanelOpen] = useState(false);
   const [testPanelOpen, setTestPanelOpen] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [migrationNotice, setMigrationNotice] = useState(initialNormalization.changed);
+  const [migrationNotice, setMigrationNotice] = useState(initialNormalization.changed || optionNormalization.changed);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [availableCustomFields, setAvailableCustomFields] = useState(customFields);
@@ -154,6 +156,23 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
           : "A comment trigger accepts only one output.");
         setTimeout(() => setSaveError(null), 4000);
         return;
+      }
+      const optionId = optionIdFromHandle(connection.sourceHandle);
+      if (optionId && source?.type === "sendMessage") {
+        if (edges.some((edge) => edge.source === source.id && edge.sourceHandle === connection.sourceHandle)) {
+          setSaveError(pt ? "Cada opção aceita somente uma conexão." : "Each option accepts only one connection.");
+          setTimeout(() => setSaveError(null), 4000);
+          return;
+        }
+        const option = findMessageOption(source.data as unknown as SendMessageNodeData, optionId);
+        const privateWithoutDmWindow = source.data.deliveryMode === "private_reply" && option?.kind !== "postback";
+        if ((option?.kind === "url" || privateWithoutDmWindow) && target && reachablePathCanSend(target.id, nodes as unknown as FlowNode[], edges as unknown as FlowEdge[])) {
+          setSaveError(pt
+            ? "Esta saída não abre a janela de DM e não pode alcançar um nó que envie mensagens."
+            : "This output does not open the DM window and cannot reach a message-sending node.");
+          setTimeout(() => setSaveError(null), 5000);
+          return;
+        }
       }
       if (sourceIsCommentTrigger && target) {
         const normalized = normalizeCommentPrivateReplies(
@@ -225,13 +244,15 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
 
   const onNodeDataChange = useCallback(
     (nodeId: string, newData: Record<string, unknown>) => {
-      setNodes((nds) =>
-        nds.map((n) =>
-          n.id === nodeId ? { ...n, data: newData } : n
-        )
+      const optionHandles = new Set(
+        ((newData as unknown as SendMessageNodeData).messages ?? [])
+          .flatMap((message) => message.options ?? [])
+          .map((option) => `option:${option.id}`)
       );
+      setNodes((nds) => nds.map((n) => n.id === nodeId ? { ...n, data: newData } : n));
+      setEdges((current) => current.filter((edge) => edge.source !== nodeId || !edge.sourceHandle?.startsWith("option:") || optionHandles.has(edge.sourceHandle)));
     },
-    [setNodes]
+    [setEdges, setNodes]
   );
 
   const closeSidebar = useCallback(() => {

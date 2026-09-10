@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.supersede_waiting_flow_session(uuid, text, uuid, text) TO service_role;

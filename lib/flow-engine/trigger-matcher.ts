@@ -38,7 +38,8 @@ export async function matchTrigger(
     .eq("is_active", true)
     .eq("flows.status", "published")
     .eq("flows.workspace_id", workspaceId)
-    .order("priority", { ascending: false });
+    .order("priority", { ascending: false })
+    .order("id", { ascending: true });
 
   if (!triggers || triggers.length === 0) return null;
 

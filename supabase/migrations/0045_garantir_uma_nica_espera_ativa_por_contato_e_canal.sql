@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS flow_sessions_one_wait_per_contact_channel ON public.flow_sessions(contact_id, channel_id) WHERE status = 'active' AND waiting_for_input = true;

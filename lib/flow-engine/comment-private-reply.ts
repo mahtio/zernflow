@@ -1,4 +1,5 @@
-import type { FlowEdge, FlowNode, SendMessageNodeData } from "./types";
+import type { FlowEdge, FlowNode, MessageOption, SendMessageNodeData } from "./types";
+import { isHttpsOptionUrl, optionHandle, reachablePathCanSend } from "./message-options";
 
 export const COMMENT_PRIVATE_REPLY_TIMEOUT_HOURS = 24;
 export const DEFAULT_PRIVATE_REPLY_BUTTON_TITLE = "Continuar";
@@ -25,18 +26,10 @@ export interface CommentPrivateReplyNormalization {
   errors: CommentPrivateReplyIssue[];
 }
 
-export function isHttpsDestination(value: string | undefined): boolean {
-  if (!value) return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" && Boolean(url.hostname);
-  } catch {
-    return false;
-  }
-}
+export const isHttpsDestination = isHttpsOptionUrl;
 
-export function createPrivateReplyPostbackPayload(flowId: string, nodeId: string): string {
-  return `comment_private_reply:${flowId}:${nodeId}`;
+export function createPrivateReplyPostbackPayload(flowId: string, nodeId: string, optionId = "continue"): string {
+  return `flow_option:${flowId}:${nodeId}:${optionId}`;
 }
 
 export function getCommentPrivateReplyNodeIds(
@@ -61,16 +54,23 @@ function normalizePrivateMessage(
   const source = data.messages?.[0] ?? {};
   const legacyButton = source.buttons?.[0];
   const existing = source.privateReplyButton;
-  const type = existing?.type === "url" || existing?.type === "postback"
-    ? existing.type
-    : legacyButton?.type === "url" || legacyButton?.type === "postback"
-      ? legacyButton.type
-      : "postback";
-  const title = (existing?.title || legacyButton?.title || DEFAULT_PRIVATE_REPLY_BUTTON_TITLE).trim();
-  const destinationUrl = existing?.destinationUrl || legacyButton?.url;
-  const mediaUrl = source.mediaType === "image"
-    ? source.mediaUrl
-    : source.imageUrl;
+  const canonical = source.options?.[0];
+  const type = canonical?.kind === "url" || canonical?.kind === "postback"
+    ? canonical.kind
+    : existing?.type === "url" || existing?.type === "postback"
+      ? existing.type
+      : legacyButton?.type === "url" || legacyButton?.type === "postback"
+        ? legacyButton.type
+        : undefined;
+  const title = (canonical?.title || existing?.title || legacyButton?.title || DEFAULT_PRIVATE_REPLY_BUTTON_TITLE).trim();
+  const destinationUrl = canonical?.destinationUrl || existing?.destinationUrl || legacyButton?.url;
+  const mediaUrl = source.mediaType === "image" ? source.mediaUrl : source.imageUrl;
+  const option: MessageOption | undefined = type ? {
+    id: canonical?.id || existing?.id || `opt_private_${nodeId}`,
+    title: title || DEFAULT_PRIVATE_REPLY_BUTTON_TITLE,
+    kind: type,
+    destinationUrl: type === "url" ? destinationUrl : undefined,
+  } : undefined;
 
   return {
     ...data,
@@ -80,14 +80,8 @@ function normalizePrivateMessage(
       text: source.text ?? "",
       mediaUrl,
       mediaType: mediaUrl ? "image" : undefined,
-      privateReplyButton: {
-        type,
-        title: title || DEFAULT_PRIVATE_REPLY_BUTTON_TITLE,
-        destinationUrl: type === "url" ? destinationUrl : undefined,
-        payload: type === "postback"
-          ? createPrivateReplyPostbackPayload(flowId, nodeId)
-          : undefined,
-      },
+      interactionMode: option ? "buttons" : "none",
+      options: option ? [option] : [],
     }],
   };
 }
@@ -158,11 +152,19 @@ export function normalizeCommentPrivateReplies(
     if (!message || (!message.text?.trim() && !message.mediaUrl)) {
       errors.push({ code: "invalid_message", nodeId: node.id, message: "Informe um texto ou uma imagem para a resposta privada." });
     }
-    const button = message?.privateReplyButton;
-    if (!button || !button.title.trim() || !["postback", "url"].includes(button.type)) {
+    const options = message?.options ?? [];
+    if (options.length > 1 || options.some((option) => option.kind === "quick_reply")) {
+      errors.push({ code: "invalid_button", nodeId: node.id, message: "A resposta privada aceita zero ou um botão, sem respostas rápidas." });
+    }
+    const button = options[0];
+    if (button && (!button.title.trim() || !["postback", "url"].includes(button.kind))) {
       errors.push({ code: "invalid_button", nodeId: node.id, message: "Configure um botão válido com texto obrigatório." });
-    } else if (button.type === "url" && !isHttpsDestination(button.destinationUrl)) {
+    } else if (button?.kind === "url" && !isHttpsDestination(button.destinationUrl)) {
       errors.push({ code: "invalid_destination", nodeId: node.id, message: "A URL de destino do botão deve começar com https://." });
+    }
+    const outgoing = edges.filter((edge) => edge.source === node.id && (!button || edge.sourceHandle === optionHandle(button.id)));
+    if ((!button || button.kind === "url") && outgoing.some((edge) => reachablePathCanSend(edge.target, normalizedNodes, edges))) {
+      errors.push({ code: "invalid_destination", nodeId: node.id, message: "Sem postback, a resposta privada só pode alcançar Lógica/Ações que não enviem mensagens." });
     }
   }
 

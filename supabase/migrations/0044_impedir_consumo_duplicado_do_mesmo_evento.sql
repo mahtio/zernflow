@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX IF NOT EXISTS flow_sessions_consumed_event_unique ON public.flow_sessions(consumed_event_id) WHERE consumed_event_id IS NOT NULL;

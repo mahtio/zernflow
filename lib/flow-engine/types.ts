@@ -42,7 +42,21 @@ export interface TriggerNodeData {
   payload?: string;
 }
 
+export type MessageInteractionMode = "none" | "buttons" | "quick_replies";
+export type MessageOptionKind = "postback" | "url" | "quick_reply";
+
+export interface MessageOption {
+  /** Stable opaque identity. Editing the title never changes this value. */
+  id: string;
+  title: string;
+  kind: MessageOptionKind;
+  destinationUrl?: string;
+  /** Kept only to make legacy graph migration auditable; never sent to users. */
+  legacyPayload?: string;
+}
+
 export interface PrivateReplyButton {
+  id?: string;
   type: "postback" | "url";
   title: string;
   destinationUrl?: string;
@@ -50,36 +64,41 @@ export interface PrivateReplyButton {
   payload?: string;
 }
 
+export interface Message {
+  text?: string;
+  imageUrl?: string;
+  mediaUrl?: string;
+  mediaType?: "image" | "video" | "audio";
+  interactionMode?: MessageInteractionMode;
+  options?: MessageOption[];
+  /** Legacy fields are accepted only by deterministic normalization. */
+  privateReplyButton?: PrivateReplyButton;
+  quickReplies?: Array<{ title: string; payload: string }>;
+  buttons?: Array<{
+    title: string;
+    type: "postback" | "url";
+    payload?: string;
+    url?: string;
+  }>;
+  carousel?: {
+    elements: Array<{
+      imageUrl?: string;
+      title: string;
+      subtitle?: string;
+      buttons?: Array<{
+        type: "postback" | "url";
+        title: string;
+        payload?: string;
+        url?: string;
+      }>;
+    }>;
+  };
+}
+
 export interface SendMessageNodeData {
   deliveryMode?: "standard" | "private_reply";
   interactionTimeoutHours?: number;
-  messages: Array<{
-    text?: string;
-    imageUrl?: string;
-    mediaUrl?: string;
-    mediaType?: "image" | "video" | "audio";
-    privateReplyButton?: PrivateReplyButton;
-    quickReplies?: Array<{ title: string; payload: string }>;
-    buttons?: Array<{
-      title: string;
-      type: "postback" | "url";
-      payload?: string;
-      url?: string;
-    }>;
-    carousel?: {
-      elements: Array<{
-        imageUrl?: string;
-        title: string;
-        subtitle?: string;
-        buttons?: Array<{
-          type: "postback" | "url";
-          title: string;
-          payload?: string;
-          url?: string;
-        }>;
-      }>;
-    };
-  }>;
+  messages: Message[];
 }
 
 export interface ConditionNodeData {
@@ -171,6 +190,10 @@ export interface EnrollSequenceNodeData {
 export interface FlowExecutionContext {
   triggerId: string;
   flowId: string;
+  publishedVersion?: number;
+  /** Session reserved atomically while superseding another flow. */
+  reservedSessionId?: string;
+  inboundEventId?: string;
   channelId: string;
   contactId: string;
   conversationId: string;

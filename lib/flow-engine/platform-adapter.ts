@@ -1,4 +1,5 @@
 import type { Platform } from "@/lib/types/database";
+import type { MessageInteractionMode, MessageOption } from "./types";
 
 interface QuickReply {
   title: string;
@@ -22,6 +23,8 @@ interface CarouselElement {
 interface MessageContent {
   text?: string;
   imageUrl?: string;
+  interactionMode?: MessageInteractionMode;
+  options?: MessageOption[];
   quickReplies?: QuickReply[];
   buttons?: Button[];
   carousel?: { elements: CarouselElement[] };
@@ -69,21 +72,43 @@ const WHATSAPP_MAX_REPLY_BUTTONS = 3;
  */
 export function adaptMessage(
   content: MessageContent,
-  platform: Platform
+  platform: Platform,
+  payloadForOption: (option: MessageOption) => string = (option) => option.id,
+  urlForOption: (option: MessageOption) => string = (option) => option.destinationUrl || ""
 ): AdaptedMessage {
+  const canonical: MessageContent = content.interactionMode === "buttons"
+    ? {
+        ...content,
+        buttons: (content.options ?? []).map((option) => ({
+          title: option.title,
+          type: option.kind === "url" ? "url" : "postback",
+          payload: option.kind === "postback" ? payloadForOption(option) : undefined,
+          url: option.kind === "url" ? urlForOption(option) : undefined,
+        })),
+        quickReplies: undefined,
+      }
+    : content.interactionMode === "quick_replies"
+      ? {
+          ...content,
+          buttons: undefined,
+          quickReplies: (content.options ?? []).map((option) => ({ title: option.title, payload: payloadForOption(option) })),
+        }
+      : content.interactionMode === "none"
+        ? { ...content, buttons: undefined, quickReplies: undefined }
+        : content;
   switch (platform) {
     case "facebook":
     case "instagram":
-      return adaptForMeta(content);
+      return adaptForMeta(canonical);
     case "whatsapp":
-      return adaptForWhatsApp(content);
+      return adaptForWhatsApp(canonical);
     case "telegram":
-      return adaptForTelegram(content);
+      return adaptForTelegram(canonical);
     case "twitter":
     case "bluesky":
     case "reddit":
     default:
-      return adaptForTextOnly(content);
+      return adaptForTextOnly(canonical);
   }
 }
 

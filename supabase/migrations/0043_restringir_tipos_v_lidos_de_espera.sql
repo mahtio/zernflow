@@ -1,0 +1,1 @@
+ALTER TABLE public.flow_sessions ADD CONSTRAINT flow_sessions_waiting_type_check CHECK (waiting_type IS NULL OR waiting_type IN ('message_option', 'private_reply'));

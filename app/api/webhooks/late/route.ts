@@ -7,6 +7,8 @@ import { messagePreview } from "@/lib/message-preview";
 import { upsertContactForSender } from "@/lib/inbox-sync";
 import { processComment } from "@/lib/comment-processor";
 import { resumeWaitingSession } from "@/lib/flow-engine/engine";
+import { parseOptionPayload } from "@/lib/flow-engine/interaction-resolver";
+import { matchTrigger } from "@/lib/flow-engine/trigger-matcher";
 import type { Database } from "@/lib/types/database";
 
 interface WebhookPayload {
@@ -360,12 +362,27 @@ async function runFlowExecution(
     conversationId: conversation.id,
     workspaceId: channel.workspace_id,
     incomingMessage,
+    inboundEventId: payload.id || msg.platformMessageId || msg.id,
     lateConversationId: conv.id,
   };
 
-  // A reply or postback belongs to the active private-reply wait before it can
-  // be interpreted as a global keyword or a fresh flow trigger.
-  if (await resumeWaitingSession(supabase, flowContext)) return;
+  const { data: waitingSession } = await supabase
+    .from("flow_sessions")
+    .select("*")
+    .eq("contact_id", contactId)
+    .eq("channel_id", channel.id)
+    .eq("status", "active")
+    .eq("waiting_for_input", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // A valid option always has first priority. Arbitrary free text must not
+  // consume a message-option wait.
+  const optionPayload = parseOptionPayload(metadata?.postbackPayload || metadata?.quickReplyPayload);
+  if (waitingSession && optionPayload) {
+    if (await resumeWaitingSession(supabase, flowContext)) return;
+  }
 
   const handled = await handleGlobalKeywords(
     supabase,
@@ -375,6 +392,37 @@ async function runFlowExecution(
   );
 
   if (!handled) {
+    // While waiting for a choice, only free text that matches a different
+    // published trigger may supersede the old session. The RPC performs the
+    // cancellation and successor reservation atomically.
+    if (waitingSession && !optionPayload && msg.text) {
+      const trigger = await matchTrigger(supabase, {
+        channelId: channel.id,
+        workspaceId: channel.workspace_id,
+        conversationId: conversation.id,
+        message: incomingMessage,
+        isFirstMessage: false,
+      });
+      if (!trigger || trigger.flow_id === waitingSession.flow_id) return;
+      const eventId = payload.id || msg.platformMessageId || msg.id;
+      const { data: successorId, error: switchError } = await supabase.rpc("supersede_waiting_flow_session", {
+        p_session_id: waitingSession.id,
+        p_event_id: eventId,
+        p_new_flow_id: trigger.flow_id,
+        p_trigger_id: trigger.id,
+      });
+      if (switchError) throw switchError;
+      if (!successorId) return;
+      await executeFlow(supabase, {
+        ...flowContext,
+        flowId: trigger.flow_id,
+        triggerId: trigger.id,
+        reservedSessionId: successorId,
+      });
+      return;
+    }
+    if (waitingSession) return;
+
     let triggerType = "message_received";
     if (metadata?.quickReplyPayload || metadata?.postbackPayload) {
       triggerType = "button_clicked";

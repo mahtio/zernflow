@@ -22,7 +22,8 @@ import { executeAiResponse } from "./nodes/ai-response";
 import { adaptMessage } from "./platform-adapter";
 import { createZernioClient } from "@/lib/zernio-client";
 import { createTrackedLinkToken, createTrackedLinkUrl } from "@/lib/tracked-link";
-import { createPrivateReplyPostbackPayload } from "./comment-private-reply";
+import { createOptionPayload, parseOptionPayload, resolveOptionEdge } from "./interaction-resolver";
+import { optionHandle } from "./message-options";
 
 export async function executeFlow(
   supabase: SupabaseClient<Database>,
@@ -40,8 +41,8 @@ export async function executeFlow(
     context.variables.message ??= context.incomingMessage.text;
   }
 
-  // A reply must resume a waiting Smart Delay before evaluating a new flow.
-  if (await resumeWaitingSession(supabase, context)) return;
+  // A reply must resume an eligible waiting session before evaluating a new flow.
+  if (!context.reservedSessionId && await resumeWaitingSession(supabase, context)) return;
 
   // Load flow
   const { data: flow } = await supabase
@@ -55,6 +56,7 @@ export async function executeFlow(
 
   const nodes = flow.nodes as unknown as FlowNode[];
   const edges = flow.edges as unknown as FlowEdge[];
+  context.publishedVersion = flow.version;
 
   // Get channel platform and late_account_id
   const { data: channel } = await supabase
@@ -81,18 +83,23 @@ export async function executeFlow(
     }
   }
 
-  // Create session
-  const { data: session } = await supabase
-    .from("flow_sessions")
-    .insert({
-      contact_id: context.contactId,
-      flow_id: context.flowId,
-      channel_id: context.channelId,
-      status: "active",
-      variables: context.variables || {},
-    })
-    .select("id")
-    .single();
+  // A flow switch may reserve the successor in the same transaction that
+  // cancels the old wait. Ordinary starts create a fresh session here.
+  const session = context.reservedSessionId
+    ? { id: context.reservedSessionId }
+    : (await supabase
+        .from("flow_sessions")
+        .insert({
+          contact_id: context.contactId,
+          flow_id: context.flowId,
+          channel_id: context.channelId,
+          status: "active",
+          variables: context.variables || {},
+          consumed_event_id: context.inboundEventId || null,
+          published_version: flow.version,
+        })
+        .select("id")
+        .single()).data;
 
   if (!session) return;
 
@@ -186,6 +193,7 @@ export async function resumeSession(
 
   const nodes = flow.nodes as unknown as FlowNode[];
   const edges = flow.edges as unknown as FlowEdge[];
+  context.publishedVersion = session.published_version ?? flow.version;
 
   const { data: channel } = await supabase
     .from("channels")
@@ -218,12 +226,40 @@ export async function resumeSession(
     context.variables.message = context.incomingMessage.text;
   }
 
+  const currentNode = nodes.find((n) => n.id === session.current_node_id);
+  if (!currentNode) {
+    await cancelUnresumableSession(supabase, session.id, `node ${session.current_node_id} no longer exists in flow ${session.flow_id}`);
+    return;
+  }
+  const optionPayload = parseOptionPayload(context.incomingMessage.postbackPayload || context.incomingMessage.quickReplyPayload);
+  const selected = optionPayload && optionPayload.flowId === session.flow_id && optionPayload.nodeId === currentNode.id
+    ? resolveOptionEdge(currentNode, edges, optionPayload.optionId)
+    : null;
+  const waitingOptionIds = Array.isArray(session.accepted_option_ids) ? session.accepted_option_ids as string[] : [];
+  if (session.waiting_type === "message_option" && (!selected || !waitingOptionIds.includes(selected.option.id))) {
+    return;
+  }
+  if (selected) {
+    context.variables.interaction_type = selected.option.kind === "quick_reply" ? "quick_reply" : selected.option.kind === "url" ? "link" : "postback";
+    context.variables.selected_option_id = selected.option.id;
+    context.variables.selected_option_title = selected.option.title;
+    if (selected.option.kind !== "url") context.variables.dm_window_opened_at = new Date().toISOString();
+  }
+
   // Claim the exact waiting state atomically. Duplicate webhooks/link clicks see
   // no returned row and cannot traverse the next node a second time.
   if (session.waiting_for_input) {
     const { data: claimed, error: claimError } = await supabase
       .from("flow_sessions")
-      .update({ waiting_for_input: false, waiting_until: null })
+      .update({
+        waiting_for_input: false,
+        waiting_until: null,
+        wait_expires_at: null,
+        ended_reason: selected ? "choice" : "reply",
+        selected_option_id: selected?.option.id ?? null,
+        dm_window_opened_at: selected && selected.option.kind !== "url" ? new Date().toISOString() : session.dm_window_opened_at,
+        variables: context.variables as Json,
+      })
       .eq("id", session.id)
       .eq("status", "active")
       .eq("waiting_for_input", true)
@@ -238,21 +274,9 @@ export async function resumeSession(
       .eq("id", session.id);
   }
 
-  // Continue from current node
-  const currentNode = nodes.find((n) => n.id === session.current_node_id);
-  if (!currentNode) {
-    // The flow was edited and the paused-on node removed; the session can
-    // never advance, so settle it instead of leaving it active forever.
-    await cancelUnresumableSession(
-      supabase,
-      session.id,
-      `node ${session.current_node_id} no longer exists in flow ${session.flow_id}`
-    );
-    return;
-  }
-
-  // Get next node after the current one
-  const nextEdge = edges.find((e) => e.source === currentNode.id);
+  // Get next node after the current one. Interactive messages continue only
+  // through the stable handle carried by the selected option.
+  const nextEdge = selected?.edge ?? edges.find((e) => e.source === currentNode.id);
   if (!nextEdge) {
     await completeSession(supabase, session.id);
     return;
@@ -445,22 +469,28 @@ async function sendFirstMessageAsPrivateReply(
     adaptMessage(first, context.platform ?? "instagram").text,
     context.variables || {}
   );
-  const configuredButton = first.privateReplyButton || { type: "postback" as const, title: "Continuar" };
-  const button = configuredButton.type === "url"
+  const configuredOption = first.options?.[0];
+  const version = context.publishedVersion ?? 1;
+  const button = configuredOption?.kind === "url"
     ? {
         type: "url" as const,
-        title: configuredButton.title,
+        title: configuredOption.title,
         url: createTrackedLinkUrl(createTrackedLinkToken({
           sessionId,
+          flowId: context.flowId,
+          version,
           nodeId,
-          destinationUrl: configuredButton.destinationUrl!,
+          optionId: configuredOption.id,
+          destinationUrl: configuredOption.destinationUrl!,
         })),
       }
-    : {
-        type: "postback" as const,
-        title: configuredButton.title,
-        payload: createPrivateReplyPostbackPayload(context.flowId, nodeId),
-      };
+    : configuredOption
+      ? {
+          type: "postback" as const,
+          title: configuredOption.title,
+          payload: createOptionPayload(context.flowId, version, nodeId, configuredOption.id),
+        }
+      : undefined;
 
   try {
     const response = await zernio.comments.sendPrivateReplyToComment({
@@ -468,7 +498,7 @@ async function sendFirstMessageAsPrivateReply(
         postId: String(context.variables!.post_id),
         commentId: String(context.variables!.comment_id),
       },
-      body: { accountId: lateAccountId, message: text, buttons: [button] },
+      body: { accountId: lateAccountId, message: text, ...(button ? { buttons: [button] } : {}) },
     });
 
     if (response.error) {
@@ -497,9 +527,9 @@ async function sendFirstMessageAsPrivateReply(
       .from("flow_sessions")
       .update({ variables: (context.variables || {}) as Json })
       .eq("id", sessionId);
-    if (hasNextNode) {
+    if (configuredOption && hasNextNode) {
       const expiresAt = new Date(Date.now() + (data.interactionTimeoutHours || 24) * 60 * 60 * 1000).toISOString();
-      await schedulePrivateReplyExpiration(supabase, sessionId, nodeId, expiresAt);
+      await schedulePrivateReplyExpiration(supabase, sessionId, nodeId, expiresAt, configuredOption.id, version);
     }
   } catch (error) {
     console.error("Failed to send comment-context message as private reply:", error);
@@ -524,7 +554,9 @@ async function schedulePrivateReplyExpiration(
   supabase: SupabaseClient<Database>,
   sessionId: string,
   nodeId: string,
-  expiresAt: string
+  expiresAt: string,
+  optionId: string,
+  version: number
 ) {
   const { error: jobError } = await supabase.from("scheduled_jobs").insert({
     type: "expire_flow_session",
@@ -534,7 +566,16 @@ async function schedulePrivateReplyExpiration(
   if (jobError) throw new Error(`Could not schedule private reply expiration: ${jobError.message}`);
   const { error: sessionError } = await supabase
     .from("flow_sessions")
-    .update({ waiting_for_input: true, waiting_until: expiresAt, current_node_id: nodeId })
+    .update({
+      waiting_for_input: true,
+      waiting_until: expiresAt,
+      waiting_type: "private_reply",
+      waiting_node_id: nodeId,
+      wait_expires_at: expiresAt,
+      published_version: version,
+      accepted_option_ids: [optionId],
+      current_node_id: nodeId,
+    })
     .eq("id", sessionId);
   if (sessionError) throw new Error(`Could not pause private reply session: ${sessionError.message}`);
 }
@@ -610,8 +651,23 @@ async function executeSendMessage(
     lateConversationId = conversation.late_conversation_id;
   }
 
+  let waitsForOption = false;
   for (const msg of data.messages) {
-    const adapted = adaptMessage(msg, context.platform!);
+    const options = msg.options ?? [];
+    const version = context.publishedVersion ?? 1;
+    const adapted = adaptMessage(
+      msg,
+      context.platform!,
+      (option) => createOptionPayload(context.flowId, version, node.id, option.id),
+      (option) => createTrackedLinkUrl(createTrackedLinkToken({
+        sessionId,
+        flowId: context.flowId,
+        version,
+        nodeId: node.id,
+        optionId: option.id,
+        destinationUrl: option.destinationUrl!,
+      }))
+    );
     const text = interpolateVariables(adapted.text, context.variables || {});
 
     try {
@@ -674,6 +730,7 @@ async function executeSendMessage(
         contact_id: context.contactId,
         event_type: "message_sent",
       });
+      waitsForOption ||= options.length > 0;
     } catch (error) {
       console.error("Failed to send message:", error);
       await supabase.from("messages").insert({
@@ -697,6 +754,23 @@ async function executeSendMessage(
     if (data.messages.length > 1) {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
+  }
+  if (waitsForOption) {
+    const acceptedOptionIds = data.messages.flatMap((message) => message.options ?? []).map((option) => option.id);
+    const expiresAt = new Date(Date.now() + (data.interactionTimeoutHours || 24) * 60 * 60 * 1000).toISOString();
+    const { error } = await supabase.from("flow_sessions").update({
+      waiting_for_input: true,
+      waiting_until: expiresAt,
+      waiting_type: "message_option",
+      waiting_node_id: node.id,
+      wait_expires_at: expiresAt,
+      published_version: context.publishedVersion ?? 1,
+      accepted_option_ids: acceptedOptionIds,
+      current_node_id: node.id,
+    }).eq("id", sessionId);
+    if (error) throw new Error(`Could not pause message option session: ${error.message}`);
+    await supabase.from("scheduled_jobs").insert({ type: "expire_flow_session", payload: { sessionId, nodeId: node.id, expiresAt }, run_at: expiresAt });
+    return "pause";
   }
 }
 

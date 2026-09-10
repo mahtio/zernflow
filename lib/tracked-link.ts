@@ -3,7 +3,10 @@ import { isHttpsDestination } from "@/lib/flow-engine/comment-private-reply";
 
 export interface TrackedLinkPayload {
   sessionId: string;
+  flowId: string;
+  version: number;
   nodeId: string;
+  optionId: string;
   destinationUrl: string;
   expiresAt: number;
   nonce: string;
@@ -60,7 +63,7 @@ export function verifyTrackedLinkToken(token: string, now = Date.now()): Tracked
   } catch {
     throw new Error("Token inválido ou adulterado");
   }
-  if (!payload.sessionId || !payload.nodeId || !payload.nonce || !isHttpsDestination(payload.destinationUrl)) {
+  if (!payload.sessionId || !payload.flowId || !Number.isInteger(payload.version) || !payload.nodeId || !payload.optionId || !payload.nonce || !isHttpsDestination(payload.destinationUrl)) {
     throw new Error("Payload inválido");
   }
   if (!Number.isFinite(payload.expiresAt) || payload.expiresAt <= now) {

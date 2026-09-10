@@ -10,21 +10,25 @@ describe("tracked links", () => {
     const { createTrackedLinkToken, createTrackedLinkUrl, verifyTrackedLinkToken } = await import("./tracked-link");
     const token = createTrackedLinkToken({
       sessionId: "session-1",
+      flowId: "flow-1",
+      version: 3,
       nodeId: "node-1",
+      optionId: "option-1",
       destinationUrl: "https://destination.com/path",
       expiresAt: 2_000,
       nonce: "nonce-1",
     });
-    expect(verifyTrackedLinkToken(token, 1_000)).toMatchObject({ sessionId: "session-1", nodeId: "node-1" });
+    expect(verifyTrackedLinkToken(token, 1_000)).toMatchObject({ sessionId: "session-1", flowId: "flow-1", version: 3, nodeId: "node-1", optionId: "option-1" });
     expect(createTrackedLinkUrl(token)).toBe(`https://app.example.com/r/${token}`);
     expect(Buffer.from(token, "base64url").toString("utf8")).not.toContain("session-1");
   });
 
   it("rejeita adulteração, expiração e protocolos perigosos", async () => {
     const { createTrackedLinkToken, verifyTrackedLinkToken } = await import("./tracked-link");
-    const token = createTrackedLinkToken({ sessionId: "s", nodeId: "n", destinationUrl: "https://example.com", expiresAt: 2_000 });
+    const identity = { sessionId: "s", flowId: "f", version: 1, nodeId: "n", optionId: "o" };
+    const token = createTrackedLinkToken({ ...identity, destinationUrl: "https://example.com", expiresAt: 2_000 });
     expect(() => verifyTrackedLinkToken(`${token}x`, 1_000)).toThrow("adulterado");
     expect(() => verifyTrackedLinkToken(token, 2_000)).toThrow("Token expirado");
-    expect(() => createTrackedLinkToken({ sessionId: "s", nodeId: "n", destinationUrl: "data:text/html,test" })).toThrow("HTTPS");
+    expect(() => createTrackedLinkToken({ ...identity, destinationUrl: "data:text/html,test" })).toThrow("HTTPS");
   });
 });

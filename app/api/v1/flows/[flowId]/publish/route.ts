@@ -3,6 +3,7 @@ import { getApiWorkspaceId } from "@/lib/api-workspace";
 import { createClient } from "@/lib/supabase/server";
 import { BUILDER_TRIGGER_TYPES, buildDesiredTriggers } from "@/lib/flow-triggers";
 import { normalizeCommentPrivateReplies } from "@/lib/flow-engine/comment-private-reply";
+import { normalizeFlowMessageOptions, validateMessageOptionGraph } from "@/lib/flow-engine/message-options";
 import type { FlowEdge, FlowNode, SendMessageNodeData } from "@/lib/flow-engine/types";
 
 export async function POST(
@@ -36,14 +37,22 @@ export async function POST(
       { status: 404 }
     );
 
+  const optionNormalization = normalizeFlowMessageOptions(
+    (Array.isArray(flow.nodes) ? flow.nodes : []) as unknown as FlowNode[]
+  );
   const normalized = normalizeCommentPrivateReplies(
-    (Array.isArray(flow.nodes) ? flow.nodes : []) as unknown as FlowNode[],
+    optionNormalization.nodes,
     (Array.isArray(flow.edges) ? flow.edges : []) as unknown as FlowEdge[],
     flowId
   );
-  if (normalized.errors.length > 0) {
+  const optionIssues = [
+    ...optionNormalization.issues,
+    ...validateMessageOptionGraph(normalized.nodes, normalized.edges),
+  ];
+  const issues = [...normalized.errors, ...optionIssues];
+  if (issues.length > 0) {
     return NextResponse.json(
-      { error: normalized.errors.map((issue) => issue.message).join(" "), issues: normalized.errors },
+      { error: issues.map((issue) => issue.message).join(" "), issues },
       { status: 422 }
     );
   }
