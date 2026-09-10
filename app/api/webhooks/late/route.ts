@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
-import { executeFlow, resumeWaitingSession } from "@/lib/flow-engine/engine";
-import { matchTrigger } from "@/lib/flow-engine/trigger-matcher";
-import { resolveWebhookSecret, verifyWebhookSignature } from "@/lib/zernio-webhook";
-import { upsertContactForSender } from "@/lib/inbox-sync";
-import { processComment } from "@/lib/comment-processor";
-import type { Database } from "@/lib/types/database";
+import { resolveWebhookSecret, verifyWebhookSignature } from "@/lib/webhook-verify";
+import { executeFlow } from "@/lib/flow-engine/engine";
+import { handleGlobalKeywords } from "@/lib/flow-engine/global-keywords";
 import { messagePreview } from "@/lib/message-preview";
-
-// ── Zernio API webhook payload ───────────────────────────────────────────────
+import { upsertContactForSender } from "@/lib/contact-upsert";
+import type { Database } from "@/lib/types/database";
 
 interface WebhookPayload {
   id?: string;
@@ -18,61 +15,64 @@ interface WebhookPayload {
     id: string;
     conversationId: string;
     platform: string;
-    platformMessageId: string;
-    direction: string;
-    text: string | null;
-    attachments: Array<{ type: string; url: string; payload?: string }>;
+    platformMessageId?: string;
+    direction?: string;
+    text?: string | null;
+    attachments?: Array<{ type?: string; url?: string; payload?: string; filename?: string; previewUrl?: string }>;
     sender: {
       id: string;
-      name: string;
-      username: string | null;
-      picture: string | null;
+      name?: string;
+      username?: string | null;
+      picture?: string | null;
     };
-    sentAt: string;
-    isRead: boolean;
+    sentAt?: string;
+    isRead?: boolean;
   };
   conversation: {
     id: string;
-    platformConversationId: string | null;
-    participantId: string;
-    participantName: string;
-    participantUsername: string | null;
-    participantPicture: string | null;
-    status: string;
+    platform: string;
+    participant: {
+      id: string;
+      name?: string;
+      username?: string | null;
+      picture?: string | null;
+    };
   };
   account: {
     id: string;
     platform: string;
-    username: string;
-    displayName: string;
   };
   metadata?: {
+    postbackPayload?: string;
     quickReplyPayload?: string;
     callbackData?: string;
-    postbackPayload?: string;
-    postbackTitle?: string;
+    trigger?: string;
+    commentId?: string;
+    mediaId?: string;
   };
-  timestamp: string;
 }
 
 interface CommentWebhookPayload {
   id?: string;
-  event: string;
+  event: "comment.received";
   comment: {
     id: string;
-    /** Zernio post ID; null when the comment is on a post not published through Zernio. */
-    postId: string | null;
-    platformPostId: string;
-    platform: string;
     text: string;
-    author: { id: string; username?: string; name?: string; picture?: string };
+    mediaId: string;
+    mediaUrl?: string;
+    sender: {
+      id: string;
+      username: string;
+      name?: string;
+      picture?: string | null;
+    };
     createdAt: string;
-    isReply: boolean;
-    parentCommentId: string | null;
+    parentId?: string;
   };
-  post: { id: string; platformPostId: string };
-  account: { id: string; platform: string; username: string };
-  timestamp: string;
+  account: {
+    id: string;
+    platform: string;
+  };
 }
 
 function parseIsoDate(value: unknown): string {
@@ -100,12 +100,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * Claim an event id for processing. Returns false when another delivery of the
- * same event already claimed it (Zernio retries with the same id), so retries
- * and redeliveries never re-run a flow. Events without an id are processed
- * unconditionally rather than dropped.
- */
 async function claimWebhookEvent(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   eventId: string | null | undefined
@@ -116,7 +110,6 @@ async function claimWebhookEvent(
     .insert({ event_id: eventId });
   if (!error) return true;
   if (error.code === "23505") return false;
-  // Table missing / transient DB error: fail open so deliveries keep working.
   console.error("webhook_events claim failed:", error);
   return true;
 }
@@ -145,11 +138,10 @@ async function handleWebhook(request: NextRequest) {
   }
 
   const payload = parsed as WebhookPayload;
-
   const { message: msg, account } = payload;
 
-  // Ignore outbound messages (sent by the bot itself) to prevent loops
-  if (msg.direction === "outbound") {
+  // Ignore outbound messages (sent by the bot or agent itself) to prevent loops
+  if (msg.direction === "outbound" || msg.direction === "outgoing") {
     return NextResponse.json({ ok: true, skipped: true });
   }
 
@@ -167,9 +159,7 @@ async function handleWebhook(request: NextRequest) {
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
   }
 
-  // Prevent loops: if the sender is another connected account in this
-  // workspace, skip. This happens when both sides of a DM conversation
-  // are connected (e.g. during testing).
+  // Prevent loops if sender is own connected account
   if (msg.sender.username) {
     const { data: senderChannel } = await supabase
       .from("channels")
@@ -184,8 +174,7 @@ async function handleWebhook(request: NextRequest) {
     }
   }
 
-  // Verify HMAC-SHA256 signature against the workspace-level secret
-  // (falls back to the legacy per-channel secret during transition).
+  // Verify HMAC-SHA256 signature
   const secret = await resolveWebhookSecret(supabase, channel);
   if (secret && !verifyWebhookSignature(secret, body, signature)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
@@ -195,28 +184,33 @@ async function handleWebhook(request: NextRequest) {
     return NextResponse.json({ ok: true, skipped: true, reason: "duplicate_event" });
   }
 
-  // Ack immediately and process after the response: Zernio aborts deliveries
-  // at 5s and retries, so contact upserts + flow execution (Zernio sends, AI
-  // nodes) must never run before the 200 goes out.
-  after(async () => {
-    try {
-      await processMessageEvent(supabase, payload, channel);
-    } catch (err) {
-      console.error("Webhook message processing error:", err);
-    }
-  });
+  // Synchronously persist contact, conversation, and message to Supabase
+  // so the message is 100% saved in the DB and Supabase Realtime fires immediately.
+  const processed = await processMessagePersistence(supabase, payload, channel);
 
-  return NextResponse.json({ ok: true, queued: true });
+  // Run flows / automation in the background
+  if (processed?.conversation && !processed.conversation.is_automation_paused) {
+    after(async () => {
+      try {
+        await runFlowExecution(supabase, payload, channel, processed.contactId, processed.conversation);
+      } catch (err) {
+        console.error("Background flow execution error:", err);
+      }
+    });
+  }
+
+  return NextResponse.json({ ok: true });
 }
 
-async function processMessageEvent(
+/**
+ * Persists contact, conversation, and inbound message synchronously to Supabase.
+ */
+async function processMessagePersistence(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
   payload: WebhookPayload,
   channel: Database["public"]["Tables"]["channels"]["Row"],
 ) {
-  const { message: msg, conversation: conv, account, metadata } = payload;
-
-  // ── Upsert contact ───────────────────────────────────────────────────────
+  const { message: msg, conversation: conv, metadata } = payload;
 
   const senderId = msg.sender.id;
   const senderName = msg.sender.name || msg.sender.username || senderId;
@@ -233,16 +227,13 @@ async function processMessageEvent(
 
   if (!contact) {
     console.error("Failed to create contact for webhook message");
-    return;
+    return null;
   }
 
   const contactId = contact.contactId;
-
-  // ── Upsert conversation ──────────────────────────────────────────────────
-
   const preview = messagePreview(msg.text);
 
-  const { data: conversation } = await supabase
+  const { data: conversation, error: convErr } = await supabase
     .from("conversations")
     .upsert(
       {
@@ -261,22 +252,20 @@ async function processMessageEvent(
     .select("id, is_automation_paused")
     .single();
 
-  if (!conversation) {
-    console.error("Failed to upsert conversation for webhook message");
-    return;
+  if (convErr || !conversation) {
+    console.error("Failed to upsert conversation:", convErr);
+    return null;
   }
 
   if (contact.existed) {
-    await supabase
-      .rpc("increment_unread", {
-        conv_id: conversation.id,
-        preview,
-      })
-      .then(() => {});
+    await supabase.rpc("increment_unread", {
+      conv_id: conversation.id,
+      preview,
+    });
   }
 
-  // ── Mirror inbound message locally in Supabase ─────────────────────────────
-  const platformMessageId = msg.platformMessageId || msg.id || null;
+  // Check if message already exists
+  const platformMessageId = msg.platformMessageId || (msg.id && !msg.id.startsWith("conv_") ? msg.id : null);
   let shouldInsertMessage = true;
 
   if (platformMessageId) {
@@ -326,67 +315,97 @@ async function processMessageEvent(
     }
   }
 
-  // ── Flow engine ───────────────────────────────────────────────────────────
+  return { contactId, conversation };
+}
 
-  if (!conversation.is_automation_paused) {
-    const incomingMessage = {
-      text: msg.text || undefined,
-      postbackPayload: metadata?.postbackPayload || undefined,
-      quickReplyPayload: metadata?.quickReplyPayload || undefined,
-      callbackData: metadata?.callbackData || undefined,
-      sender: {
-        id: msg.sender.id,
-        name: msg.sender.name,
-        username: msg.sender.username || undefined,
-      },
+/**
+ * Executes automations and flows for inbound messages in the background.
+ */
+async function runFlowExecution(
+  supabase: Awaited<ReturnType<typeof createServiceClient>>,
+  payload: WebhookPayload,
+  channel: Database["public"]["Tables"]["channels"]["Row"],
+  contactId: string,
+  conversation: { id: string; is_automation_paused: boolean },
+) {
+  const { message: msg, conversation: conv, metadata } = payload;
+
+  const incomingMessage = {
+    text: msg.text || undefined,
+    postbackPayload: metadata?.postbackPayload || undefined,
+    quickReplyPayload: metadata?.quickReplyPayload || undefined,
+    callbackData: metadata?.callbackData || undefined,
+    sender: {
+      id: msg.sender.id,
+      name: msg.sender.name,
+      username: msg.sender.username || undefined,
+    },
+  };
+
+  const handled = await handleGlobalKeywords(
+    supabase,
+    channel.workspace_id,
+    contactId,
+    msg.text || undefined
+  );
+
+  if (!handled) {
+    const flowContext = {
+      triggerId: "",
+      flowId: "",
+      channelId: channel.id,
+      contactId,
+      conversationId: conversation.id,
+      workspaceId: channel.workspace_id,
+      incomingMessage,
+      lateConversationId: conv.id,
     };
 
-    const handled = await handleGlobalKeywords(
-      supabase,
-      channel.workspace_id,
-      contactId,
-      msg.text || undefined
-    );
+    let triggerType = "message_received";
+    if (metadata?.quickReplyPayload || metadata?.postbackPayload) {
+      triggerType = "button_clicked";
+    }
 
-    if (!handled) {
-      const flowContext = {
-        triggerId: "",
-        flowId: "",
-        channelId: channel.id,
-        contactId,
-        conversationId: conversation.id,
-        workspaceId: channel.workspace_id,
-        incomingMessage,
-        lateConversationId: conv.id,
-        lateAccountId: account.id,
-      };
+    const { data: flows } = await supabase
+      .from("flows")
+      .select("*")
+      .eq("workspace_id", channel.workspace_id)
+      .eq("status", "published");
 
-      try {
-        const resumed = await resumeWaitingSession(supabase, flowContext);
-        if (resumed) return;
-
-        const trigger = await matchTrigger(supabase, {
-          channelId: channel.id,
-          workspaceId: channel.workspace_id,
-          conversationId: conversation.id,
-          message: incomingMessage,
-          isFirstMessage: !contact.existed,
-        });
-        if (trigger) {
-          await executeFlow(supabase, {
-            ...flowContext,
-            triggerId: trigger.id,
-            flowId: trigger.flow_id,
-          });
+    if (flows) {
+      for (const flow of flows) {
+        if (flow.channel_id && flow.channel_id !== channel.id) {
+          continue;
         }
-      } catch (err) {
-        console.error("Flow execution error:", err);
+
+        const nodes = (flow.nodes as Array<{
+          id: string;
+          type: string;
+          data?: Record<string, unknown>;
+        }>) || [];
+
+        const matchingTrigger = nodes.find(
+          (n) =>
+            n.type === "trigger" &&
+            (n.data?.triggerType === triggerType ||
+              n.data?.triggerType === "message_received" ||
+              (!n.data?.triggerType && triggerType === "message_received"))
+        );
+
+        if (matchingTrigger) {
+          await executeFlow({
+            ...flowContext,
+            triggerId: matchingTrigger.id,
+            flowId: flow.id,
+          });
+          break;
+        }
       }
     }
   }
 }
 
-// ── Comment webhook ─────────────────────────────────────────────────────────
+// ── Comment webhook handler ──────────────────────────────────────────────────
 
 async function handleCommentWebhook(
   payload: CommentWebhookPayload,
@@ -394,26 +413,18 @@ async function handleCommentWebhook(
   signature: string | null,
   eventId: string | null | undefined
 ) {
+  const { comment, account } = payload;
   const supabase = await createServiceClient();
 
   const { data: channel } = await supabase
     .from("channels")
     .select("*")
-    .eq("late_account_id", payload.account.id)
+    .eq("late_account_id", account.id)
     .eq("is_active", true)
     .single();
 
   if (!channel) {
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
-  }
-
-  // Prevent loops: our own comments (e.g. the configured public reply) also
-  // arrive as comment.received and must never re-trigger a flow.
-  if (
-    payload.comment.author?.username &&
-    payload.comment.author.username === channel.username
-  ) {
-    return NextResponse.json({ ok: true, skipped: true, reason: "own_comment" });
   }
 
   const secret = await resolveWebhookSecret(supabase, channel);
@@ -425,24 +436,9 @@ async function handleCommentWebhook(
     return NextResponse.json({ ok: true, skipped: true, reason: "duplicate_event" });
   }
 
-  // Ack before processing (same 5s delivery budget as messages); processComment
-  // additionally dedupes on (channel_id, platform_comment_id) so cross-event
-  // redeliveries of the same comment stay one-shot.
   after(async () => {
     try {
-      await processComment({
-        supabase,
-        channel,
-        comment: {
-          id: payload.comment.id,
-          // Native posts (not published through Zernio) have a null postId; fall
-          // back to the platform post id so flows still run. Zernio's private-reply
-          // endpoint only needs the comment id, so the placeholder is harmless.
-          postId: payload.comment.postId || payload.comment.platformPostId,
-          text: payload.comment.text,
-          author: payload.comment.author,
-        },
-      });
+      await processCommentEvent(supabase, payload, channel);
     } catch (err) {
       console.error("Webhook comment processing error:", err);
     }
@@ -451,51 +447,95 @@ async function handleCommentWebhook(
   return NextResponse.json({ ok: true, queued: true });
 }
 
-// ── Global keywords ─────────────────────────────────────────────────────────
-
-async function handleGlobalKeywords(
+async function processCommentEvent(
   supabase: Awaited<ReturnType<typeof createServiceClient>>,
-  workspaceId: string,
-  contactId: string,
-  text: string | undefined
-): Promise<boolean> {
-  if (!text) return false;
+  payload: CommentWebhookPayload,
+  channel: Database["public"]["Tables"]["channels"]["Row"]
+) {
+  const { comment } = payload;
 
-  const { data: workspace } = await supabase
-    .from("workspaces")
-    .select("global_keywords")
-    .eq("id", workspaceId)
-    .single();
+  const contact = await upsertContactForSender({
+    supabase,
+    channel,
+    senderId: comment.sender.id,
+    senderName: comment.sender.name || comment.sender.username,
+    senderPicture: comment.sender.picture || null,
+    senderUsername: comment.sender.username || null,
+    interactionAt: new Date().toISOString(),
+  });
 
-  if (!workspace?.global_keywords) return false;
-
-  const keywords = workspace.global_keywords as Array<{
-    keyword: string;
-    action?: string;
-    flowId?: string;
-  }>;
-
-  const normalizedText = text.toLowerCase().trim();
-
-  for (const kw of keywords) {
-    if (normalizedText === kw.keyword.toLowerCase()) {
-      if (kw.action === "unsubscribe") {
-        await supabase
-          .from("contacts")
-          .update({ is_subscribed: false })
-          .eq("id", contactId);
-        return true;
-      }
-      if (kw.action === "subscribe") {
-        await supabase
-          .from("contacts")
-          .update({ is_subscribed: true })
-          .eq("id", contactId);
-        return true;
-      }
-      return false;
-    }
+  if (!contact) {
+    console.error("Failed to create contact for comment");
+    return;
   }
 
-  return false;
+  const contactId = contact.contactId;
+
+  const { data: flows } = await supabase
+    .from("flows")
+    .select("*")
+    .eq("workspace_id", channel.workspace_id)
+    .eq("status", "published");
+
+  if (!flows?.length) return;
+
+  for (const flow of flows) {
+    if (flow.channel_id && flow.channel_id !== channel.id) continue;
+
+    const nodes = (flow.nodes as Array<{
+      id: string;
+      type: string;
+      data?: Record<string, unknown>;
+    }>) || [];
+
+    const commentTrigger = nodes.find(
+      (n) =>
+        n.type === "trigger" &&
+        (n.data?.triggerType === "comment_received" ||
+          n.data?.triggerType === "post_comment")
+    );
+
+    if (!commentTrigger) continue;
+
+    const triggerData = commentTrigger.data || {};
+    if (
+      triggerData.mediaId &&
+      triggerData.mediaId !== comment.mediaId
+    ) {
+      continue;
+    }
+
+    if (triggerData.keywords && Array.isArray(triggerData.keywords) && triggerData.keywords.length > 0) {
+      const commentLower = comment.text.toLowerCase();
+      const matches = (triggerData.keywords as string[]).some((kw: string) =>
+        commentLower.includes(kw.toLowerCase().trim())
+      );
+      if (!matches) continue;
+    }
+
+    await executeFlow({
+      triggerId: commentTrigger.id,
+      flowId: flow.id,
+      channelId: channel.id,
+      contactId,
+      conversationId: "",
+      workspaceId: channel.workspace_id,
+      incomingMessage: {
+        text: comment.text,
+        sender: {
+          id: comment.sender.id,
+          name: comment.sender.name || comment.sender.username,
+          username: comment.sender.username,
+        },
+      },
+      commentContext: {
+        commentId: comment.id,
+        mediaId: comment.mediaId,
+        text: comment.text,
+        username: comment.sender.username,
+      },
+    });
+
+    break;
+  }
 }

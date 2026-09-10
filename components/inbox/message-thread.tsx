@@ -509,7 +509,31 @@ export function MessageThread({
       )
       .subscribe();
 
+    const pollInterval = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(`/api/v1/messages?conversationId=${conversationId}`);
+        if (res.ok) {
+          const fresh = await res.json();
+          if (Array.isArray(fresh) && fresh.length > 0) {
+            setMessages((prev) => {
+              if (prev.length !== fresh.length || fresh[fresh.length - 1]?.id !== prev[prev.length - 1]?.id) {
+                const optimistic = prev.filter((m) => m.id.startsWith("optimistic-"));
+                const knownIds = new Set(fresh.map((m: Message) => m.id));
+                const remainingOptimistic = optimistic.filter((m) => !knownIds.has(m.id));
+                return [...fresh, ...remainingOptimistic];
+              }
+              return prev;
+            });
+          }
+        }
+      } catch {
+        // Ignore background polling errors
+      }
+    }, 4000);
+
     return () => {
+      clearInterval(pollInterval);
       supabase.removeChannel(channel);
     };
   }, [conversation?.id]);

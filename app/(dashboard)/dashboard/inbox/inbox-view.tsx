@@ -57,6 +57,15 @@ export function InboxView({
     setSelected(c);
   }, []);
 
+  // Update selected conversation metadata when conversations change in the sidebar
+  useEffect(() => {
+    if (!selected) return;
+    const found = conversations.find((c) => c.id === selected.id);
+    if (found && (found.unread_count !== selected.unread_count || found.last_message_at !== selected.last_message_at)) {
+      setSelected(found);
+    }
+  }, [conversations, selected]);
+
   // Load messages when a conversation is selected
   useEffect(() => {
     if (!selected) {
