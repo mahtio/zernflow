@@ -264,7 +264,56 @@ async function processMessageEvent(
       .then(() => {});
   }
 
-  // Messages are stored by Zernio (source of truth) — no local insert needed.
+  // ── Mirror inbound message locally in Supabase ─────────────────────────────
+  const platformMessageId = msg.platformMessageId || msg.id || null;
+  let shouldInsertMessage = true;
+
+  if (platformMessageId) {
+    const { data: existingMessage } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", conversation.id)
+      .eq("platform_message_id", platformMessageId)
+      .maybeSingle();
+
+    if (existingMessage) {
+      shouldInsertMessage = false;
+    }
+  }
+
+  if (shouldInsertMessage) {
+    const formattedAttachments = Array.isArray(msg.attachments) && msg.attachments.length > 0
+      ? msg.attachments.map((att: any, index: number) => ({
+          id: att.id ?? `att-${index}-${Date.now()}`,
+          type: att.type ?? "file",
+          url: att.url,
+          filename: att.filename ?? (att.payload ? String(att.payload) : null),
+          previewUrl: att.previewUrl ?? null,
+        }))
+      : null;
+
+    const messageCreatedAt = msg.sentAt ? new Date(msg.sentAt).toISOString() : new Date().toISOString();
+
+    const { error: insertMessageError } = await supabase.from("messages").insert({
+      conversation_id: conversation.id,
+      direction: "inbound",
+      text: msg.text || null,
+      attachments: formattedAttachments,
+      quick_reply_payload: metadata?.quickReplyPayload || null,
+      postback_payload: metadata?.postbackPayload || null,
+      callback_data: metadata?.callbackData || null,
+      platform_message_id: platformMessageId,
+      sent_by_flow_id: null,
+      sent_by_node_id: null,
+      sent_by_user_id: null,
+      status: "delivered",
+      created_at: messageCreatedAt,
+    });
+
+    if (insertMessageError) {
+      console.error("Failed to mirror inbound message to Supabase:", insertMessageError);
+    }
+  }
 
   // ── Flow engine ───────────────────────────────────────────────────────────
 

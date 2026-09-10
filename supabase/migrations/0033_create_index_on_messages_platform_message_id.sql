@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_messages_platform_msg_id ON public.messages(platform_message_id) WHERE platform_message_id IS NOT NULL;

@@ -38,44 +38,12 @@ function attachmentType(file: File): "image" | "video" | "audio" | "file" {
   return "file";
 }
 
-function attachmentUrl(
-  conversationId: string,
-  messageId: string,
-  attachmentIndex: number,
-  preview = false
-): string {
-  const params = new URLSearchParams({
-    conversationId,
-    messageId,
-    attachmentIndex: String(attachmentIndex),
-  });
-  if (preview) params.set("preview", "true");
-  return `/api/v1/messages/media?${params.toString()}`;
-}
-
-function mapAttachment(
-  attachment: ZernioAttachment,
-  conversationId: string,
-  messageId: string,
-  attachmentIndex: number
-) {
-  if (!attachment.url && !attachment.previewUrl) return null;
-
-  return {
-    id: attachment.id ?? null,
-    type: attachment.type ?? "file",
-    url: attachmentUrl(conversationId, messageId, attachmentIndex),
-    filename: attachment.filename ?? null,
-    previewUrl: attachment.previewUrl
-      ? attachmentUrl(conversationId, messageId, attachmentIndex, true)
-      : null,
-  };
-}
-
 /**
  * GET /api/v1/messages?conversationId=...
  *
- * Fetches messages from the Zernio API (source of truth) instead of a local mirror.
+ * Reads messages directly from local Supabase database for instant 0ms latency.
+ * If local database has no messages yet for this conversation, performs an
+ * on-demand backfill from Zernio and saves them to Supabase.
  */
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -89,7 +57,23 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "conversationId required" }, { status: 400 });
   }
 
-  // Look up the Zernio conversation ID and workspace API key
+  // 1. Primary query: fetch from local Supabase messages table
+  const { data: localMessages, error: localError } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true });
+
+  if (localError) {
+    console.error("Failed to fetch local messages:", localError);
+  }
+
+  // If we already have local messages, return them immediately
+  if (localMessages && localMessages.length > 0) {
+    return NextResponse.json(localMessages);
+  }
+
+  // 2. Fallback / Backfill: look up conversation in Zernio if local is empty
   const { data: conversation } = await supabase
     .from("conversations")
     .select("late_conversation_id, workspace_id, channels(late_account_id)")
@@ -97,7 +81,7 @@ export async function GET(request: NextRequest) {
     .single();
 
   if (!conversation?.late_conversation_id) {
-    return NextResponse.json({ error: "Conversation not found or missing Zernio ID" }, { status: 404 });
+    return NextResponse.json(localMessages ?? []);
   }
 
   const { data: workspace } = await supabase
@@ -107,68 +91,84 @@ export async function GET(request: NextRequest) {
     .single();
 
   if (!workspace?.late_api_key_encrypted) {
-    return NextResponse.json({ error: "API key not configured" }, { status: 400 });
+    return NextResponse.json(localMessages ?? []);
   }
 
   const channel = conversation.channels as { late_account_id: string } | null;
   if (!channel?.late_account_id) {
-    return NextResponse.json({ error: "Channel not found" }, { status: 404 });
+    return NextResponse.json(localMessages ?? []);
   }
 
-  // Fetch messages from Zernio API
+  // Fetch messages from Zernio API for backfill
   try {
     const zernio = createZernioClient(workspace.late_api_key_encrypted);
     const res = await zernio.messages.getInboxConversationMessages({
       path: { conversationId: conversation.late_conversation_id },
-      query: { accountId: channel.late_account_id },
+      query: { accountId: channel.late_account_id, limit: 100, sortOrder: "asc" },
     });
 
-    // The Zernio endpoint returns { success, messages: [...] } — NOT { data }.
     const zernioMessages =
       (res.data as { messages?: unknown[] })?.messages ??
       (res.data as { data?: unknown[] })?.data ??
       [];
 
-    // Map Zernio messages to the shape the inbox UI expects
-    const messages = zernioMessages.map((m: any) => ({
-      id: m.id,
-      conversation_id: conversationId,
-      direction: m.direction === "outgoing" || m.direction === "outbound"
-        ? "outbound"
-        : "inbound",
-      text: m.text ?? m.message ?? null,
-      attachments: m.attachments?.length && m.id
-        ? m.attachments
-            .map((attachment: ZernioAttachment, index: number) =>
-              mapAttachment(attachment, conversationId, m.id, index)
-            )
-            .filter(Boolean)
-        : null,
-      quick_reply_payload: null,
-      postback_payload: null,
-      callback_data: null,
-      platform_message_id: m.platformMessageId ?? null,
-      sent_by_flow_id: null,
-      sent_by_node_id: null,
-      sent_by_user_id: null,
-      status: "sent",
-      created_at: m.sentAt ?? m.createdAt ?? new Date().toISOString(),
-    }));
+    if (!zernioMessages.length) {
+      return NextResponse.json([]);
+    }
 
-    return NextResponse.json(messages);
+    // Map Zernio messages to Supabase rows
+    const rowsToInsert = zernioMessages.map((m: any, idx: number) => {
+      const formattedAttachments = Array.isArray(m.attachments) && m.attachments.length > 0
+        ? m.attachments.map((att: ZernioAttachment, attIdx: number) => ({
+            id: att.id ?? `att-${idx}-${attIdx}-${Date.now()}`,
+            type: att.type ?? "file",
+            url: att.url ?? att.previewUrl ?? "",
+            filename: att.filename ?? null,
+            previewUrl: att.previewUrl ?? null,
+          }))
+        : null;
+
+      return {
+        conversation_id: conversationId,
+        direction: (m.direction === "outgoing" || m.direction === "outbound"
+          ? "outbound"
+          : "inbound") as "inbound" | "outbound",
+        text: m.text ?? m.message ?? null,
+        attachments: formattedAttachments,
+        quick_reply_payload: null,
+        postback_payload: null,
+        callback_data: null,
+        platform_message_id: m.platformMessageId ?? m.id ?? null,
+        sent_by_flow_id: null,
+        sent_by_node_id: null,
+        sent_by_user_id: null,
+        status: "sent" as const,
+        created_at: m.sentAt ?? m.createdAt ?? new Date().toISOString(),
+      };
+    });
+
+    // Bulk insert backfilled messages into Supabase
+    const { data: insertedMessages, error: insertError } = await supabase
+      .from("messages")
+      .insert(rowsToInsert)
+      .select();
+
+    if (insertError) {
+      console.error("Backfill insert error:", insertError);
+      return NextResponse.json(rowsToInsert);
+    }
+
+    return NextResponse.json(insertedMessages ?? rowsToInsert);
   } catch (error) {
-    console.error("Failed to fetch messages from Zernio API:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch messages" },
-      { status: 500 }
-    );
+    console.error("Failed to backfill messages from Zernio API:", error);
+    return NextResponse.json(localMessages ?? []);
   }
 }
 
 /**
  * POST /api/v1/messages
  *
- * Sends a message via Zernio API. No local message storage — Zernio is the source of truth.
+ * Sends a message via Zernio API and mirrors it immediately in local Supabase database.
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
@@ -243,9 +243,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "API key not configured" }, { status: 400 });
   }
 
-  // Send via Zernio — binary attachments require multipart/form-data.
   try {
     let responseData: { data?: { messageId?: string } };
+    let attachmentsPayload: Array<{
+      id: string;
+      type: string;
+      url: string;
+      filename: string | null;
+      previewUrl: string | null;
+    }> | null = null;
 
     if (file) {
       const uploadFormData = new FormData();
@@ -257,7 +263,7 @@ export async function POST(request: NextRequest) {
         headers: { Authorization: `Bearer ${workspace.late_api_key_encrypted}` },
         body: uploadFormData,
       });
-      const uploadData = await uploadResponse.json().catch(() => ({})) as {
+      const uploadData = (await uploadResponse.json().catch(() => ({}))) as {
         url?: string;
         error?: string;
       };
@@ -265,6 +271,7 @@ export async function POST(request: NextRequest) {
         throw new Error(uploadData.error ?? `Upload failed (${uploadResponse.status})`);
       }
 
+      const fileKind = attachmentType(file);
       const zernio = createZernioClient(workspace.late_api_key_encrypted);
       const response = await zernio.messages.sendInboxMessage({
         path: { conversationId: conversation.late_conversation_id },
@@ -273,11 +280,21 @@ export async function POST(request: NextRequest) {
           accountId: channel.late_account_id,
           message: text || undefined,
           attachmentUrl: uploadData.url,
-          attachmentType: attachmentType(file),
-          attachmentName: attachmentType(file) === "file" ? file.name : undefined,
+          attachmentType: fileKind,
+          attachmentName: fileKind === "file" ? file.name : undefined,
         },
       });
       responseData = response.data as { data?: { messageId?: string } };
+
+      attachmentsPayload = [
+        {
+          id: `att-${Date.now()}`,
+          type: fileKind,
+          url: uploadData.url,
+          filename: file.name,
+          previewUrl: fileKind === "image" ? uploadData.url : null,
+        },
+      ];
     } else {
       const zernio = createZernioClient(workspace.late_api_key_encrypted);
       const response = await zernio.messages.sendInboxMessage({
@@ -291,7 +308,7 @@ export async function POST(request: NextRequest) {
     const messageId = responseData?.data?.messageId ?? null;
     const preview = text || (file ? `[${file.name}]` : "");
 
-    // Update conversation's last message info (ZernFlow-specific metadata)
+    // Update conversation's last message info
     await supabase
       .from("conversations")
       .update({
@@ -300,14 +317,38 @@ export async function POST(request: NextRequest) {
       })
       .eq("id", conversationId);
 
-    // The client refreshes from Zernio after a successful attachment send.
+    // Persist outbound message in local Supabase database
+    const { data: insertedMessage, error: insertError } = await supabase
+      .from("messages")
+      .insert({
+        conversation_id: conversationId,
+        direction: "outbound",
+        text: text || null,
+        attachments: attachmentsPayload,
+        quick_reply_payload: null,
+        postback_payload: null,
+        callback_data: null,
+        platform_message_id: messageId,
+        sent_by_flow_id: null,
+        sent_by_node_id: null,
+        sent_by_user_id: user.id,
+        status: "sent",
+        created_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error("Failed to insert outbound message locally:", insertError);
+    }
+
     return NextResponse.json(
-      {
+      insertedMessage ?? {
         id: messageId ?? `sent-${Date.now()}`,
         conversation_id: conversationId,
         direction: "outbound",
         text: text || null,
-        attachments: null,
+        attachments: attachmentsPayload,
         quick_reply_payload: null,
         postback_payload: null,
         callback_data: null,
@@ -323,7 +364,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error("Failed to send message via Zernio API:", error);
     return NextResponse.json(
-      { error: `Failed to send message: ${error}` },
+      { error: `Failed to send message: ${error instanceof Error ? error.message : String(error)}` },
       { status: 500 }
     );
   }

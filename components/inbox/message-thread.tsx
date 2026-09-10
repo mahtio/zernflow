@@ -2,7 +2,22 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Send, Paperclip, Bot, User, MessageSquare, CheckCircle, Clock, RotateCcw, Loader2, FileText, ExternalLink, X } from "lucide-react";
+import {
+  Send,
+  Paperclip,
+  Bot,
+  User,
+  MessageSquare,
+  CheckCircle,
+  Clock,
+  RotateCcw,
+  Loader2,
+  FileText,
+  ExternalLink,
+  X,
+  AlertCircle,
+  Check,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { PlatformIcon } from "@/components/platform-icon";
@@ -71,20 +86,35 @@ interface Attachment {
   previewUrl?: string | null;
 }
 
-function getAttachments(value: Message["attachments"]): Attachment[] {
+function getAttachments(
+  value: Message["attachments"],
+  messageId?: string,
+  conversationId?: string
+): Attachment[] {
   if (!Array.isArray(value)) return [];
 
-  return value.flatMap((item) => {
+  return value.flatMap((item, index) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return [];
     const attachment = item as Record<string, unknown>;
     if (typeof attachment.type !== "string" || typeof attachment.url !== "string") return [];
 
+    let url = attachment.url;
+    let previewUrl = typeof attachment.previewUrl === "string" ? attachment.previewUrl : null;
+
+    // Route protected Zernio WhatsApp media URLs through the authenticated proxy
+    if (url.includes("zernio.com") && url.includes("whatsapp/media") && messageId && conversationId) {
+      url = `/api/v1/messages/media?conversationId=${conversationId}&messageId=${messageId}&attachmentIndex=${index}`;
+      if (previewUrl) {
+        previewUrl = `/api/v1/messages/media?conversationId=${conversationId}&messageId=${messageId}&attachmentIndex=${index}&preview=true`;
+      }
+    }
+
     return [{
       id: typeof attachment.id === "string" ? attachment.id : null,
       type: attachment.type,
-      url: attachment.url,
+      url,
       filename: typeof attachment.filename === "string" ? attachment.filename : null,
-      previewUrl: typeof attachment.previewUrl === "string" ? attachment.previewUrl : null,
+      previewUrl,
     }];
   });
 }
@@ -119,7 +149,7 @@ function AttachmentList({ attachments, pt }: { attachments: Attachment[]; pt: bo
                   alt={attachment.filename || (pt ? "Imagem anexada" : "Attached image")}
                   loading="lazy"
                   className={cn(
-                    "max-h-80 max-w-full object-contain",
+                    "max-h-80 max-w-full rounded-lg object-contain",
                     attachment.type === "sticker" ? "w-40" : "min-w-40"
                   )}
                 />
@@ -154,9 +184,11 @@ function AttachmentList({ attachments, pt }: { attachments: Attachment[]; pt: bo
 
           if (attachment.type === "audio") {
             return (
-              <audio key={key} src={attachment.url} controls preload="metadata" className="max-w-full">
-                {pt ? "Seu navegador não suporta áudio." : "Your browser does not support audio."}
-              </audio>
+              <div key={key} className="py-1">
+                <audio src={attachment.url} controls preload="metadata" className="max-w-full">
+                  {pt ? "Seu navegador não suporta áudio." : "Your browser does not support audio."}
+                </audio>
+              </div>
             );
           }
 
@@ -222,13 +254,15 @@ function shouldShowDateSeparator(
 }
 
 function hasRenderableContent(message: Message): boolean {
-  return Boolean(message.text?.trim()) || getAttachments(message.attachments).length > 0;
+  return Boolean(message.text?.trim()) || getAttachments(message.attachments, message.id, message.conversation_id).length > 0;
 }
 
 function MessageBubble({ message, locale, pt }: { message: Message; locale: string; pt: boolean }) {
   const isInbound = message.direction === "inbound";
   const isBot = message.sent_by_flow_id !== null;
-  const attachments = getAttachments(message.attachments);
+  const isPending = message.status === "pending";
+  const isFailed = message.status === "failed";
+  const attachments = getAttachments(message.attachments, message.id, message.conversation_id);
 
   return (
     <div
@@ -246,10 +280,13 @@ function MessageBubble({ message, locale, pt }: { message: Message; locale: stri
       <div className="max-w-[70%]">
         <div
           className={cn(
-            "rounded-2xl px-4 py-2 text-sm",
+            "rounded-2xl px-4 py-2 text-sm transition-opacity",
             isInbound
               ? "rounded-tl-md bg-muted text-foreground"
-              : "rounded-tr-md bg-primary text-primary-foreground"
+              : isFailed
+              ? "rounded-tr-md bg-destructive text-destructive-foreground"
+              : "rounded-tr-md bg-primary text-primary-foreground",
+            isPending && "opacity-80"
           )}
         >
           {message.text && <MessageText text={message.text} pt={pt} />}
@@ -271,13 +308,29 @@ function MessageBubble({ message, locale, pt }: { message: Message; locale: stri
             <Bot className="h-3 w-3" />
           )}
           <span>{formatMessageTime(message.created_at, locale)}</span>
-          {!isInbound && message.status !== "sent" && (
-            <span className="capitalize">
-              {message.status === "delivered"
-                ? (pt ? "Entregue" : "Delivered")
-                : message.status === "failed"
-                ? (pt ? "Falhou" : "Failed")
-                : ""}
+          {!isInbound && (
+            <span className="flex items-center gap-0.5">
+              {isPending ? (
+                <>
+                  <Clock className="h-2.5 w-2.5 animate-spin" />
+                  <span>{pt ? "Enviando..." : "Sending..."}</span>
+                </>
+              ) : isFailed ? (
+                <>
+                  <AlertCircle className="h-2.5 w-2.5 text-destructive" />
+                  <span className="text-destructive font-medium">{pt ? "Falhou" : "Failed"}</span>
+                </>
+              ) : message.status === "delivered" ? (
+                <>
+                  <CheckCircle className="h-2.5 w-2.5 text-green-600" />
+                  <span>{pt ? "Entregue" : "Delivered"}</span>
+                </>
+              ) : (
+                <>
+                  <Check className="h-2.5 w-2.5" />
+                  <span>{pt ? "Enviado" : "Sent"}</span>
+                </>
+              )}
             </span>
           )}
         </div>
@@ -317,6 +370,7 @@ export function MessageThread({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const blobUrlsRef = useRef<Set<string>>(new Set());
 
   const updateConversationStatus = useCallback(async (status: ConversationStatus) => {
     if (!conversation || statusUpdating) return;
@@ -333,7 +387,7 @@ export function MessageThread({
     } finally {
       setStatusUpdating(null);
     }
-  }, [conversation, statusUpdating, router]);
+  }, [conversation, statusUpdating, router, pt]);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -346,42 +400,96 @@ export function MessageThread({
     setMessages(initialMessages);
   }, [initialMessages]);
 
-  // Auto-scroll to bottom when messages change
+  // Clean up blob URLs when unmounting
+  useEffect(() => {
+    return () => {
+      blobUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      blobUrlsRef.current.clear();
+    };
+  }, []);
+
+  // Auto-scroll to bottom smoothly when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Listen for conversation updates (last_message_at changes when a new message arrives)
-  // and re-fetch messages from Zernio API.
+  // Supabase Realtime Subscription:
+  // Listens directly to PostgreSQL changes on the messages table in real time (0ms latency).
   useEffect(() => {
-    if (!conversation) return;
+    if (!conversation?.id) return;
 
     const supabase = createClient();
+    const conversationId = conversation.id;
+
     const channel = supabase
-      .channel(`conversation-${conversation.id}`)
+      .channel(`chat-messages-${conversationId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const newMsg = payload.new as Message;
+          setMessages((prev) => {
+            // If already present by id or platform_message_id, update it
+            const existingIndex = prev.findIndex(
+              (m) =>
+                m.id === newMsg.id ||
+                (newMsg.platform_message_id && m.platform_message_id === newMsg.platform_message_id)
+            );
+
+            if (existingIndex >= 0) {
+              const updated = [...prev];
+              updated[existingIndex] = newMsg;
+              return updated;
+            }
+
+            // Also check if this matches any recent pending optimistic message
+            const optimisticIndex = prev.findIndex(
+              (m) =>
+                m.id.startsWith("optimistic-") &&
+                m.direction === newMsg.direction &&
+                m.text === newMsg.text
+            );
+
+            if (optimisticIndex >= 0) {
+              const updated = [...prev];
+              updated[optimisticIndex] = newMsg;
+              return updated;
+            }
+
+            return [...prev, newMsg];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "messages",
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const updatedMsg = payload.new as Message;
+          setMessages((prev) =>
+            prev.map((m) => (m.id === updatedMsg.id ? updatedMsg : m))
+          );
+        }
+      )
       .on(
         "postgres_changes",
         {
           event: "UPDATE",
           schema: "public",
           table: "conversations",
-          filter: `id=eq.${conversation.id}`,
+          filter: `id=eq.${conversationId}`,
         },
-        async () => {
-          try {
-            const res = await fetch(
-              `/api/v1/messages?conversationId=${conversation.id}`
-            );
-            if (res.ok) {
-              const freshMessages = await res.json();
-              setMessages((prev) => {
-                const optimistic = prev.filter((m) => m.id.startsWith("optimistic-"));
-                return [...freshMessages, ...optimistic];
-              });
-            }
-          } catch (err) {
-            console.error("Failed to refresh messages:", err);
-          }
+        () => {
+          // Conversation metadata changed (e.g. status, unread_count)
         }
       )
       .subscribe();
@@ -399,71 +507,97 @@ export function MessageThread({
     setSendError(null);
     setSending(true);
 
-    // Text-only messages keep the immediate optimistic update. Attachments are
-    // loaded from Zernio after upload so the preview uses its canonical URL.
     const optimisticId = `optimistic-${Date.now()}`;
-    if (!file) {
-      const optimisticMessage: Message = {
-        id: optimisticId,
-        conversation_id: conversation.id,
-        direction: "outbound",
-        text,
-        attachments: null,
-        quick_reply_payload: null,
-        postback_payload: null,
-        callback_data: null,
-        platform_message_id: null,
-        sent_by_flow_id: null,
-        sent_by_node_id: null,
-        sent_by_user_id: null,
-        status: "pending",
-        created_at: new Date().toISOString(),
-      };
-      setMessages((prev) => [...prev, optimisticMessage]);
-      setInput("");
+    let optimisticAttachments: Array<{
+      id: string;
+      type: string;
+      url: string;
+      filename: string;
+      previewUrl: string | null;
+    }> | null = null;
+
+    if (file) {
+      const blobUrl = URL.createObjectURL(file);
+      blobUrlsRef.current.add(blobUrl);
+      const fileType = file.type.startsWith("image/")
+        ? "image"
+        : file.type.startsWith("video/")
+        ? "video"
+        : file.type.startsWith("audio/")
+        ? "audio"
+        : "file";
+
+      optimisticAttachments = [
+        {
+          id: `opt-att-${Date.now()}`,
+          type: fileType,
+          url: blobUrl,
+          filename: file.name,
+          previewUrl: fileType === "image" ? blobUrl : null,
+        },
+      ];
     }
 
+    // Instant optimistic update with zero lag
+    const optimisticMessage: Message = {
+      id: optimisticId,
+      conversation_id: conversation.id,
+      direction: "outbound",
+      text: text || null,
+      attachments: optimisticAttachments,
+      quick_reply_payload: null,
+      postback_payload: null,
+      callback_data: null,
+      platform_message_id: null,
+      sent_by_flow_id: null,
+      sent_by_node_id: null,
+      sent_by_user_id: null,
+      status: "pending",
+      created_at: new Date().toISOString(),
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setInput("");
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
+
     try {
-      const requestInit: RequestInit = { method: "POST" };
+      let res: Response;
       if (file) {
         const formData = new FormData();
         formData.set("conversationId", conversation.id);
-        formData.set("text", text);
+        if (text) formData.set("text", text);
         formData.set("file", file);
-        requestInit.body = formData;
+        res = await fetch("/api/v1/messages", {
+          method: "POST",
+          body: formData,
+        });
       } else {
-        requestInit.headers = { "Content-Type": "application/json" };
-        requestInit.body = JSON.stringify({ conversationId: conversation.id, text });
+        res = await fetch("/api/v1/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversationId: conversation.id, text }),
+        });
       }
 
-      const res = await fetch("/api/v1/messages", requestInit);
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({}));
         throw new Error(errorData.error || `Send failed (${res.status})`);
       }
 
-      if (file) {
-        setInput("");
-        setSelectedFile(null);
-        if (fileInputRef.current) fileInputRef.current.value = "";
-        const messagesResponse = await fetch(`/api/v1/messages?conversationId=${conversation.id}`);
-        if (messagesResponse.ok) setMessages(await messagesResponse.json());
-      } else {
-        const confirmedMessage: Message = await res.json();
-        setMessages((prev) =>
-          prev.map((m) => (m.id === optimisticId ? confirmedMessage : m))
-        );
-      }
+      const confirmedMessage: Message = await res.json();
+      setMessages((prev) =>
+        prev.map((m) => (m.id === optimisticId ? confirmedMessage : m))
+      );
     } catch (err) {
       console.error("Failed to send message:", err);
       setSendError(err instanceof Error ? err.message : (pt ? "Falha ao enviar" : "Failed to send"));
-      if (!file) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === optimisticId ? { ...m, status: "failed" as const } : m
-          )
-        );
-      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === optimisticId ? { ...m, status: "failed" as const } : m
+        )
+      );
     } finally {
       setSending(false);
     }

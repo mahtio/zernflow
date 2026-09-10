@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createZernioClient } from "@/lib/zernio-client";
 
-interface ZernioAttachment {
+interface AttachmentData {
+  id?: string | null;
   type?: string;
   url?: string;
   previewUrl?: string | null;
@@ -38,8 +39,8 @@ export async function GET(request: NextRequest) {
     .single();
 
   const channel = conversation?.channels as { late_account_id: string } | null;
-  if (!conversation?.late_conversation_id || !channel?.late_account_id) {
-    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+  if (!channel?.late_account_id || !conversation?.workspace_id) {
+    return NextResponse.json({ error: "Conversation or channel not found" }, { status: 404 });
   }
 
   const { data: workspace } = await supabase
@@ -53,16 +54,47 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const zernio = createZernioClient(workspace.late_api_key_encrypted);
-    const messagesResponse = await zernio.messages.getInboxConversationMessages({
-      path: { conversationId: conversation.late_conversation_id },
-      query: { accountId: channel.late_account_id, limit: 100, sortOrder: "asc" },
-    });
-    const messages = (messagesResponse.data as { messages?: Array<{ id?: string; attachments?: ZernioAttachment[] }> })?.messages ?? [];
-    const message = messages.find((item) => item.id === messageId);
-    const attachment = message?.attachments?.[attachmentIndex];
-    const sourceUrl = preview ? attachment?.previewUrl : attachment?.url;
-    if (!attachment || !sourceUrl) {
+    let sourceUrl: string | null = null;
+    let attachmentType = "file";
+
+    // 1. Try local messages table first
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(messageId);
+    let localQuery = supabase
+      .from("messages")
+      .select("attachments")
+      .eq("conversation_id", conversationId);
+
+    if (isUuid) {
+      localQuery = localQuery.or(`id.eq.${messageId},platform_message_id.eq.${messageId}`);
+    } else {
+      localQuery = localQuery.eq("platform_message_id", messageId);
+    }
+
+    const { data: localMsg } = await localQuery.maybeSingle();
+
+    if (localMsg?.attachments && Array.isArray(localMsg.attachments)) {
+      const att = localMsg.attachments[attachmentIndex] as AttachmentData | undefined;
+      if (att) {
+        sourceUrl = preview && att.previewUrl ? att.previewUrl : att.url ?? null;
+        attachmentType = att.type ?? "file";
+      }
+    }
+
+    // 2. Fallback to Zernio API if not found locally
+    if (!sourceUrl && conversation.late_conversation_id) {
+      const zernio = createZernioClient(workspace.late_api_key_encrypted);
+      const messagesResponse = await zernio.messages.getInboxConversationMessages({
+        path: { conversationId: conversation.late_conversation_id },
+        query: { accountId: channel.late_account_id, limit: 100, sortOrder: "asc" },
+      });
+      const messages = (messagesResponse.data as { messages?: Array<{ id?: string; attachments?: AttachmentData[] }> })?.messages ?? [];
+      const message = messages.find((item) => item.id === messageId);
+      const attachment = message?.attachments?.[attachmentIndex];
+      sourceUrl = preview ? attachment?.previewUrl ?? attachment?.url ?? null : attachment?.url ?? null;
+      if (attachment?.type) attachmentType = attachment.type;
+    }
+
+    if (!sourceUrl) {
       return NextResponse.json({ error: "Attachment is unavailable" }, { status: 404 });
     }
 
@@ -73,9 +105,6 @@ export async function GET(request: NextRequest) {
 
     const mediaMatch = parsedUrl.pathname.match(/\/v1\/whatsapp\/media\/([^/]+)$/);
     const isProtectedZernioMedia = parsedUrl.hostname === "zernio.com" && mediaMatch;
-    if (parsedUrl.hostname === "zernio.com" && !isProtectedZernioMedia) {
-      return NextResponse.json({ error: "Invalid attachment URL" }, { status: 400 });
-    }
 
     if (isProtectedZernioMedia) {
       parsedUrl.searchParams.set("accountId", channel.late_account_id);
@@ -104,7 +133,7 @@ export async function GET(request: NextRequest) {
       && upstreamContentType !== "application/octet-stream"
       && !upstreamContentType.startsWith("application/json")
       ? upstreamContentType
-      : fallbackContentTypes[attachment.type ?? "file"] ?? fallbackContentTypes.file;
+      : fallbackContentTypes[attachmentType] ?? fallbackContentTypes.file;
 
     const headers = new Headers();
     headers.set("Content-Type", contentType);
@@ -116,7 +145,7 @@ export async function GET(request: NextRequest) {
 
     return new NextResponse(mediaResponse.body, { headers });
   } catch (error) {
-    console.error("Failed to fetch Zernio media:", error);
+    console.error("Failed to fetch media:", error);
     return NextResponse.json({ error: "Failed to fetch attachment" }, { status: 502 });
   }
 }
