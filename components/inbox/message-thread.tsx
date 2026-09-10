@@ -86,6 +86,25 @@ interface Attachment {
   previewUrl?: string | null;
 }
 
+function getSocialPostPlatform(url: string): "instagram" | "facebook" | null {
+  try {
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (hostname === "instagram.com" || hostname.endsWith(".instagram.com")) return "instagram";
+    if (
+      hostname === "facebook.com" ||
+      hostname.endsWith(".facebook.com") ||
+      hostname === "fb.watch" ||
+      hostname.endsWith(".fb.watch")
+    ) {
+      return "facebook";
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 function getAttachments(
   value: Message["attachments"],
   messageId?: string,
@@ -134,6 +153,30 @@ function AttachmentList({ attachments, pt }: { attachments: Attachment[]; pt: bo
         {attachments.map((attachment, index) => {
           const key = attachment.id ?? `${attachment.url}-${index}`;
           const label = attachment.filename || (pt ? "Abrir anexo" : "Open attachment");
+          const socialPostPlatform = getSocialPostPlatform(attachment.url);
+
+          if (socialPostPlatform) {
+            const platformName = socialPostPlatform === "instagram" ? "Instagram" : "Facebook";
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPendingAttachment(attachment)}
+                className="flex w-full min-w-64 items-center gap-3 rounded-lg border border-current/20 p-3 text-left hover:bg-black/5"
+              >
+                <PlatformIcon platform={socialPostPlatform} size={22} className="shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium">
+                    {pt ? `Publicação do ${platformName}` : `${platformName} post`}
+                  </span>
+                  <span className="block text-xs opacity-70">
+                    {pt ? "Abrir publicação" : "Open post"}
+                  </span>
+                </span>
+                <ExternalLink className="h-4 w-4 shrink-0" />
+              </button>
+            );
+          }
 
           if (attachment.type === "image" || attachment.type === "sticker") {
             return (
@@ -208,13 +251,25 @@ function AttachmentList({ attachments, pt }: { attachments: Attachment[]; pt: bo
       </div>
       <ConfirmDialog
         open={pendingAttachment !== null}
-        title={pt ? "Abrir anexo externo?" : "Open external attachment?"}
-        message={
-          pt
-            ? `Este anexo será aberto em uma nova aba${pendingAttachment?.filename ? `: ${pendingAttachment.filename}` : ""}. Deseja continuar?`
-            : `This attachment will open in a new tab${pendingAttachment?.filename ? `: ${pendingAttachment.filename}` : ""}. Do you want to continue?`
+        title={
+          pendingAttachment && getSocialPostPlatform(pendingAttachment.url)
+            ? (pt ? "Abrir publicação externa?" : "Open external post?")
+            : (pt ? "Abrir anexo externo?" : "Open external attachment?")
         }
-        confirmLabel={pt ? "Abrir anexo" : "Open attachment"}
+        message={
+          pendingAttachment && getSocialPostPlatform(pendingAttachment.url)
+            ? (pt
+                ? "Esta publicação será aberta em uma nova aba. Deseja continuar?"
+                : "This post will open in a new tab. Do you want to continue?")
+            : (pt
+                ? `Este anexo será aberto em uma nova aba${pendingAttachment?.filename ? `: ${pendingAttachment.filename}` : ""}. Deseja continuar?`
+                : `This attachment will open in a new tab${pendingAttachment?.filename ? `: ${pendingAttachment.filename}` : ""}. Do you want to continue?`)
+        }
+        confirmLabel={
+          pendingAttachment && getSocialPostPlatform(pendingAttachment.url)
+            ? (pt ? "Abrir publicação" : "Open post")
+            : (pt ? "Abrir anexo" : "Open attachment")
+        }
         cancelLabel={pt ? "Cancelar" : "Cancel"}
         onConfirm={openAttachment}
         onCancel={() => setPendingAttachment(null)}
