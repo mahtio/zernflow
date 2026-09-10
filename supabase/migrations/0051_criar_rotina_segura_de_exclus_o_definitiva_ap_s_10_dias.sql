@@ -1,0 +1,1 @@
+CREATE OR REPLACE FUNCTION public.purge_deleted_flows() RETURNS integer LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $$ DECLARE deleted_count integer; BEGIN DELETE FROM public.flows WHERE deleted_at IS NOT NULL AND deleted_at <= now() - interval '10 days'; GET DIAGNOSTICS deleted_count = ROW_COUNT; RETURN deleted_count; END; $$;

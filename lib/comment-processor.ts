@@ -65,12 +65,13 @@ export async function getActiveCommentTriggers(
   // workspace so one tenant's triggers never run on another tenant's channels.
   const { data: triggers } = await supabase
     .from("triggers")
-    .select("*, flows!inner(status, workspace_id)")
+    .select("*, flows!inner(status, workspace_id, deleted_at)")
     .eq("type", "comment_keyword")
     .or(`channel_id.eq.${channelId},channel_id.is.null`)
     .eq("is_active", true)
     .eq("flows.status", "published")
     .eq("flows.workspace_id", workspaceId)
+    .is("flows.deleted_at", null)
     .order("priority", { ascending: false });
 
   return (triggers as Trigger[] | null) ?? [];

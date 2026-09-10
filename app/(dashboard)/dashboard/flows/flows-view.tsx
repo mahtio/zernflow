@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { GitBranch, Plug, Sparkles } from "lucide-react";
+import { GitBranch, Plug, Sparkles, Trash2 } from "lucide-react";
 import { CreateFlowButton } from "@/components/create-flow-button";
 import {
   DeleteFlowButton,
   ExportFlowButton,
   ImportFlowButton,
+  TrashFlowActions,
 } from "@/components/flow-actions";
 import { useLocale } from "@/components/locale-provider";
 import type { FlowStatus, Json } from "@/lib/types/database";
@@ -22,6 +23,12 @@ type Flow = {
   edges: Json;
 };
 
+type DeletedFlow = {
+  id: string;
+  name: string;
+  deleted_at: string | null;
+};
+
 const statusClasses: Record<FlowStatus, string> = {
   draft: "bg-muted text-muted-foreground",
   published:
@@ -32,18 +39,20 @@ const statusClasses: Record<FlowStatus, string> = {
 
 export function FlowsView({
   flows,
+  deletedFlows,
   channelCount,
 }: {
   flows: Flow[];
+  deletedFlows: DeletedFlow[];
   channelCount: number;
 }) {
   const { locale } = useLocale();
   const copy = locale === "pt-BR"
     ? {
-        title: "Fluxos", description: "Crie fluxos automatizados de chatbot para seus canais", templates: "Modelos", connectTitle: "Conecte um canal para começar", connectDescription: "Vincule suas contas de redes sociais para que seus fluxos possam enviar e receber mensagens.", connect: "Conectar", emptyTitle: "Ainda não há fluxos", emptyDescription: "Crie seu primeiro fluxo e comece a automatizar conversas.", draft: "Rascunho", published: "Publicado", archived: "Arquivado", node: "nó", nodes: "nós", updated: "Atualizado",
+        title: "Fluxos", description: "Crie fluxos automatizados de chatbot para seus canais", templates: "Modelos", connectTitle: "Conecte um canal para começar", connectDescription: "Vincule suas contas de redes sociais para que seus fluxos possam enviar e receber mensagens.", connect: "Conectar", emptyTitle: "Ainda não há fluxos", emptyDescription: "Crie seu primeiro fluxo e comece a automatizar conversas.", draft: "Rascunho", published: "Publicado", archived: "Arquivado", node: "nó", nodes: "nós", updated: "Atualizado", trash: "Lixo", trashDescription: "Automações excluídas são mantidas por 10 dias.", daysLeft: "dias restantes", dayLeft: "dia restante",
       }
     : {
-        title: "Flows", description: "Build automated chatbot flows for your channels", templates: "Templates", connectTitle: "Connect a channel to get started", connectDescription: "Link your social media accounts so your flows can send and receive messages.", connect: "Connect", emptyTitle: "No flows yet", emptyDescription: "Create your first flow to start automating conversations.", draft: "Draft", published: "Published", archived: "Archived", node: "node", nodes: "nodes", updated: "Updated",
+        title: "Flows", description: "Build automated chatbot flows for your channels", templates: "Templates", connectTitle: "Connect a channel to get started", connectDescription: "Link your social media accounts so your flows can send and receive messages.", connect: "Connect", emptyTitle: "No flows yet", emptyDescription: "Create your first flow to start automating conversations.", draft: "Draft", published: "Published", archived: "Archived", node: "node", nodes: "nodes", updated: "Updated", trash: "Trash", trashDescription: "Deleted automations are kept for 10 days.", daysLeft: "days left", dayLeft: "day left",
       };
 
   const statusLabel: Record<FlowStatus, string> = {
@@ -103,6 +112,27 @@ export function FlowsView({
             })}
           </div>
         )}
+
+        <section className="mt-10 border-t border-border pt-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-muted"><Trash2 className="h-4 w-4 text-muted-foreground" /></div>
+            <div><h2 className="font-semibold">{copy.trash}</h2><p className="text-xs text-muted-foreground">{copy.trashDescription}</p></div>
+          </div>
+          {deletedFlows.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {deletedFlows.map((flow) => {
+                const elapsedDays = flow.deleted_at ? Math.floor((Date.now() - new Date(flow.deleted_at).getTime()) / 86_400_000) : 0;
+                const remainingDays = Math.max(1, 10 - elapsedDays);
+                return (
+                  <div key={flow.id} className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div><p className="text-sm font-medium">{flow.name}</p><p className="text-xs text-muted-foreground">{remainingDays} {remainingDays === 1 ? copy.dayLeft : copy.daysLeft}</p></div>
+                    <TrashFlowActions flow={flow} />
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

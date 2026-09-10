@@ -39,11 +39,12 @@ export async function matchTrigger(
   // (and flows) would run on another tenant's channels.
   const { data: triggers } = await supabase
     .from("triggers")
-    .select("*, flows!inner(status, workspace_id)")
+    .select("*, flows!inner(status, workspace_id, deleted_at)")
     .or(`channel_id.eq.${channelId},channel_id.is.null`)
     .eq("is_active", true)
     .eq("flows.status", "published")
     .eq("flows.workspace_id", workspaceId)
+    .is("flows.deleted_at", null)
     .order("priority", { ascending: false })
     .order("id", { ascending: true });
 

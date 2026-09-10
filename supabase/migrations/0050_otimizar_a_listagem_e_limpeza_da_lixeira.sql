@@ -1,0 +1,1 @@
+CREATE INDEX idx_flows_deleted_at ON public.flows (deleted_at) WHERE deleted_at IS NOT NULL;

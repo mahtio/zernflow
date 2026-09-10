@@ -29,6 +29,7 @@ export async function POST(
     .select("*")
     .eq("id", flowId)
     .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
     .single();
 
   if (error || !flow)

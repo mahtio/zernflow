@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.purge_deleted_flows() FROM PUBLIC, anon, authenticated; GRANT EXECUTE ON FUNCTION public.purge_deleted_flows() TO service_role;

@@ -84,61 +84,94 @@ export function DeleteFlowButton({
     setDeleting(true);
 
     try {
-      const res = await fetch(`/api/v1/flows/${flow.id}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) {
-        console.error("Failed to delete flow");
-        alert(locale === "pt-BR" ? "Não foi possível excluir o fluxo. Tente novamente." : "Failed to delete flow. Please try again.");
-        return;
-      }
-
+      const res = await fetch(`/api/v1/flows/${flow.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to move flow to trash");
       router.refresh();
     } catch (err) {
-      console.error("Failed to delete flow:", err);
-      alert(locale === "pt-BR" ? "Não foi possível excluir o fluxo. Tente novamente." : "Failed to delete flow. Please try again.");
+      console.error("Failed to move flow to trash:", err);
+      alert(locale === "pt-BR" ? "Não foi possível mover o fluxo para o lixo." : "Failed to move flow to trash.");
     } finally {
       setDeleting(false);
     }
   }
 
   return (
-    // The button lives inside the flow card's <Link>; stop clicks (including
-    // clicks inside the dialog, which renders in the same DOM subtree) from
-    // bubbling into card navigation.
-    <span
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      }}
-    >
+    <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
       <button
         onClick={() => setConfirmOpen(true)}
         disabled={deleting}
         className="flex h-7 w-7 items-center justify-center rounded-md border border-border bg-card text-muted-foreground/60 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 dark:hover:text-red-400 transition-colors disabled:opacity-50"
-        aria-label={locale === "pt-BR" ? `Excluir ${flow.name}` : `Delete ${flow.name}`}
+        aria-label={locale === "pt-BR" ? `Mover ${flow.name} para o lixo` : `Move ${flow.name} to trash`}
       >
-        {deleting ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Trash2 className="h-3.5 w-3.5" />
-        )}
+        {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
       </button>
       <ConfirmDialog
         open={confirmOpen}
-        title={locale === "pt-BR" ? "Excluir fluxo" : "Delete flow"}
-        message={locale === "pt-BR" ? `"${flow.name}" e seus gatilhos, versões e histórico de execuções serão excluídos permanentemente. Esta ação não pode ser desfeita.` : `"${flow.name}" and its triggers, versions, and run history will be permanently deleted. This cannot be undone.`}
-        confirmLabel={locale === "pt-BR" ? "Excluir" : "Delete"}
+        title={locale === "pt-BR" ? "Mover para o lixo" : "Move to trash"}
+        message={locale === "pt-BR" ? `"${flow.name}" ficará no lixo por 10 dias e poderá ser restaurado nesse período.` : `"${flow.name}" will stay in trash for 10 days and can be restored during that period.`}
+        confirmLabel={locale === "pt-BR" ? "Mover para o lixo" : "Move to trash"}
         cancelLabel={locale === "pt-BR" ? "Cancelar" : "Cancel"}
         destructive
-        onConfirm={() => {
-          setConfirmOpen(false);
-          handleDelete();
-        }}
+        onConfirm={() => { setConfirmOpen(false); handleDelete(); }}
         onCancel={() => setConfirmOpen(false)}
       />
     </span>
+  );
+}
+
+export function TrashFlowActions({ flow }: { flow: { id: string; name: string } }) {
+  const router = useRouter();
+  const { locale } = useLocale();
+  const [busy, setBusy] = useState<"restore" | "delete" | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  async function restore() {
+    setBusy("restore");
+    try {
+      const res = await fetch(`/api/v1/flows/${flow.id}/restore`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed to restore flow");
+      router.refresh();
+    } catch (err) {
+      console.error("Failed to restore flow:", err);
+      alert(locale === "pt-BR" ? "Não foi possível restaurar o fluxo." : "Failed to restore flow.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function permanentlyDelete() {
+    setBusy("delete");
+    try {
+      const res = await fetch(`/api/v1/flows/${flow.id}?permanent=true`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to permanently delete flow");
+      router.refresh();
+    } catch (err) {
+      console.error("Failed to permanently delete flow:", err);
+      alert(locale === "pt-BR" ? "Não foi possível excluir o fluxo definitivamente." : "Failed to permanently delete flow.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button onClick={restore} disabled={busy !== null} className="rounded-lg border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50">
+        {busy === "restore" ? (locale === "pt-BR" ? "Restaurando..." : "Restoring...") : (locale === "pt-BR" ? "Restaurar" : "Restore")}
+      </button>
+      <button onClick={() => setConfirmOpen(true)} disabled={busy !== null} className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:hover:bg-red-950 disabled:opacity-50">
+        {busy === "delete" ? (locale === "pt-BR" ? "Excluindo..." : "Deleting...") : (locale === "pt-BR" ? "Excluir definitivamente" : "Delete permanently")}
+      </button>
+      <ConfirmDialog
+        open={confirmOpen}
+        title={locale === "pt-BR" ? "Excluir definitivamente" : "Delete permanently"}
+        message={locale === "pt-BR" ? `"${flow.name}" e todo o histórico relacionado serão excluídos. Esta ação não pode ser desfeita.` : `"${flow.name}" and all related history will be deleted. This cannot be undone.`}
+        confirmLabel={locale === "pt-BR" ? "Excluir definitivamente" : "Delete permanently"}
+        cancelLabel={locale === "pt-BR" ? "Cancelar" : "Cancel"}
+        destructive
+        onConfirm={() => { setConfirmOpen(false); permanentlyDelete(); }}
+        onCancel={() => setConfirmOpen(false)}
+      />
+    </div>
   );
 }
 

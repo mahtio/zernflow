@@ -435,7 +435,8 @@ async function runFlowExecution(
       .from("flows")
       .select("*")
       .eq("workspace_id", channel.workspace_id)
-      .eq("status", "published");
+      .eq("status", "published")
+      .is("deleted_at", null);
 
     if (flows) {
       for (const flow of flows) {

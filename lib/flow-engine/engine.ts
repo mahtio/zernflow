@@ -50,6 +50,7 @@ export async function executeFlow(
     .select("*")
     .eq("id", context.flowId)
     .eq("status", "published")
+    .is("deleted_at", null)
     .single();
 
   if (!flow) return;

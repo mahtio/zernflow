@@ -455,6 +455,7 @@ export interface Database {
           viewport: Json | null;
           version: number;
           published_at: string | null;
+          deleted_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -469,6 +470,7 @@ export interface Database {
           viewport?: Json | null;
           version?: number;
           published_at?: string | null;
+          deleted_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -481,6 +483,7 @@ export interface Database {
           viewport?: Json | null;
           version?: number;
           published_at?: string | null;
+          deleted_at?: string | null;
           updated_at?: string;
         };
         Relationships: [
@@ -1131,6 +1134,10 @@ export interface Database {
       [_ in never]: never;
     };
     Functions: {
+      purge_deleted_flows: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
       create_workspace: {
         Args: {
           workspace_name: string;

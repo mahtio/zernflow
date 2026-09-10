@@ -16,6 +16,7 @@ export async function GET() {
     .from("flows")
     .select("id, name, description, status, version, published_at, created_at, updated_at")
     .eq("workspace_id", workspaceId)
+    .is("deleted_at", null)
     .order("updated_at", { ascending: false });
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

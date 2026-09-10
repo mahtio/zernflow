@@ -16,6 +16,7 @@ export default async function FlowEditorPage({
       .select("*")
       .eq("id", flowId)
       .eq("workspace_id", workspace.id)
+      .is("deleted_at", null)
       .single(),
     supabase
       .from("custom_field_definitions")

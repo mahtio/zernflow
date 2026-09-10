@@ -35,6 +35,7 @@ export default async function GrowthPage() {
       .select("id, name")
       .eq("workspace_id", workspace.id)
       .eq("status", "published")
+      .is("deleted_at", null)
       .order("name", { ascending: true }),
     supabase
       .from("comment_logs")
