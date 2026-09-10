@@ -130,7 +130,9 @@ export async function GET(request: NextRequest) {
     const zernio = createZernioClient(workspace.late_api_key_encrypted);
     const res = await zernio.messages.getInboxConversationMessages({
       path: { conversationId: conversation.late_conversation_id },
-      query: { accountId: lateAccountId, limit: 100, sortOrder: "asc" },
+      // Fetch the newest page. With "asc", conversations over 100 messages
+      // returned the oldest page, so recent messages never reached the UI.
+      query: { accountId: lateAccountId, limit: 100, sortOrder: "desc" },
     });
 
     const zernioMessages =
@@ -210,6 +212,23 @@ export async function GET(request: NextRequest) {
         const allMessages = [...messagesList, ...inserted].sort(
           (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
         );
+        const latestMessage = allMessages[allMessages.length - 1];
+
+        if (
+          latestMessage &&
+          (!conversation.last_message_at ||
+            new Date(latestMessage.created_at).getTime() >
+              new Date(conversation.last_message_at).getTime())
+        ) {
+          await supabase
+            .from("conversations")
+            .update({
+              last_message_at: latestMessage.created_at,
+              last_message_preview: messagePreview(latestMessage.text),
+            })
+            .eq("id", conversationId);
+        }
+
         return NextResponse.json(allMessages);
       }
     }
