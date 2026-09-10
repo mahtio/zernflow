@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { WORKSPACE_COOKIE } from "@/lib/workspace";
+import { updateWorkspaceCredentials } from "@/lib/workspace-credentials";
 
 export async function switchWorkspace(workspaceId: string) {
   const supabase = await createClient();
@@ -104,12 +105,6 @@ export async function updateWorkspaceSettings(
   if (membership.role === "owner") {
     update.name = name;
   }
-  if (settings.apiKey?.trim()) {
-    update.late_api_key_encrypted = settings.apiKey.trim();
-  }
-  if (settings.aiKey?.trim()) {
-    update.ai_api_key = settings.aiKey.trim();
-  }
 
   const serviceClient = await createServiceClient();
   const { error } = await serviceClient
@@ -118,5 +113,33 @@ export async function updateWorkspaceSettings(
     .eq("id", workspaceId);
 
   if (error) return { error: error.message };
+
+  const credentials: {
+    late_api_key_encrypted?: string;
+    ai_api_key?: string;
+  } = {};
+  if (settings.apiKey?.trim()) {
+    credentials.late_api_key_encrypted = settings.apiKey.trim();
+  }
+  if (settings.aiKey?.trim()) {
+    credentials.ai_api_key = settings.aiKey.trim();
+  }
+
+  if (Object.keys(credentials).length > 0) {
+    if (membership.role !== "owner") {
+      return { error: "Only the workspace owner can update integration keys" };
+    }
+    try {
+      await updateWorkspaceCredentials(workspaceId, credentials);
+    } catch (credentialError) {
+      return {
+        error:
+          credentialError instanceof Error
+            ? credentialError.message
+            : "Failed to update integration keys",
+      };
+    }
+  }
+
   return { ok: true };
 }

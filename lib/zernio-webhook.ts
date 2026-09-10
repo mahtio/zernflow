@@ -122,16 +122,19 @@ export async function getOrCreateWorkspaceWebhookSecret(
   workspaceId: string,
 ): Promise<string> {
   const { data } = await supabase
-    .from("workspaces")
+    .from("workspace_integration_credentials")
     .select("webhook_secret")
-    .eq("id", workspaceId)
+    .eq("workspace_id", workspaceId)
     .single();
 
   const existing = (data as { webhook_secret?: string | null } | null)?.webhook_secret;
   if (existing) return existing;
 
   const secret = generateWebhookSecret();
-  await supabase.from("workspaces").update({ webhook_secret: secret }).eq("id", workspaceId);
+  await supabase.from("workspace_integration_credentials").upsert(
+    { workspace_id: workspaceId, webhook_secret: secret },
+    { onConflict: "workspace_id" }
+  );
   return secret;
 }
 
@@ -168,9 +171,9 @@ export async function resolveWebhookSecret(
   channel: ChannelSecretRef,
 ): Promise<string | null> {
   const { data } = await supabase
-    .from("workspaces")
+    .from("workspace_integration_credentials")
     .select("webhook_secret")
-    .eq("id", channel.workspace_id)
+    .eq("workspace_id", channel.workspace_id)
     .single();
 
   const workspaceSecret = (data as { webhook_secret?: string | null } | null)?.webhook_secret;

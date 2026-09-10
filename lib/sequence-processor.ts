@@ -143,9 +143,9 @@ async function sendSequenceMessage(
 ) {
   // Get workspace API key
   const { data: workspace } = await supabase
-    .from("workspaces")
+    .from("workspace_integration_credentials")
     .select("late_api_key_encrypted")
-    .eq("id", workspaceId)
+    .eq("workspace_id", workspaceId)
     .single();
 
   if (!workspace?.late_api_key_encrypted) {

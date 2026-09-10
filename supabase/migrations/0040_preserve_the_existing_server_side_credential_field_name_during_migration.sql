@@ -1,0 +1,1 @@
+ALTER TABLE public.workspace_integration_credentials RENAME COLUMN zernio_api_key TO late_api_key_encrypted;

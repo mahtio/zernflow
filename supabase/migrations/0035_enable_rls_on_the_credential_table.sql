@@ -1,0 +1,1 @@
+ALTER TABLE public.workspace_integration_credentials ENABLE ROW LEVEL SECURITY;

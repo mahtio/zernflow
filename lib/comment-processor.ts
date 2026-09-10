@@ -170,9 +170,9 @@ export async function processComment({
     let replySent = false;
     if (config.replyText) {
       const { data: workspace } = await supabase
-        .from("workspaces")
+        .from("workspace_integration_credentials")
         .select("late_api_key_encrypted")
-        .eq("id", channel.workspace_id)
+        .eq("workspace_id", channel.workspace_id)
         .single();
 
       if (workspace?.late_api_key_encrypted) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createZernioClient } from "@/lib/zernio-client";
+import { getWorkspaceCredentials } from "@/lib/workspace-credentials";
 
 async function getWorkspace(supabase: Awaited<ReturnType<typeof createClient>>) {
   const {
@@ -46,8 +47,9 @@ export async function DELETE(
   if (!channel)
     return NextResponse.json({ error: "Channel not found" }, { status: 404 });
 
-  if (workspace.late_api_key_encrypted) {
-    const zernio = createZernioClient(workspace.late_api_key_encrypted);
+  const credentials = await getWorkspaceCredentials(workspace.id);
+  if (credentials?.late_api_key_encrypted) {
+    const zernio = createZernioClient(credentials.late_api_key_encrypted);
     try {
       const res = await zernio.accounts.deleteAccount({
         path: { accountId: channel.late_account_id },

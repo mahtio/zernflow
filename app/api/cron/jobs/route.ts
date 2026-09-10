@@ -557,9 +557,9 @@ async function processJob(
       if (!broadcast) return;
 
       const { data: workspace } = await supabase
-        .from("workspaces")
+        .from("workspace_integration_credentials")
         .select("late_api_key_encrypted")
-        .eq("id", broadcast.workspace_id)
+        .eq("workspace_id", broadcast.workspace_id)
         .single();
 
       if (!workspace?.late_api_key_encrypted) return;

@@ -1,0 +1,1 @@
+REVOKE ALL ON TABLE public.workspace_integration_credentials FROM authenticated;

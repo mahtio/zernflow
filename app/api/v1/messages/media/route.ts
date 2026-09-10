@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createZernioClient } from "@/lib/zernio-client";
+import { getWorkspaceCredentials } from "@/lib/workspace-credentials";
 
 interface AttachmentData {
   id?: string | null;
@@ -43,11 +44,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Conversation or channel not found" }, { status: 404 });
   }
 
-  const { data: workspace } = await supabase
-    .from("workspaces")
-    .select("late_api_key_encrypted")
-    .eq("id", conversation.workspace_id)
-    .single();
+  const workspace = await getWorkspaceCredentials(conversation.workspace_id);
 
   if (!workspace?.late_api_key_encrypted) {
     return NextResponse.json({ error: "API key not configured" }, { status: 400 });

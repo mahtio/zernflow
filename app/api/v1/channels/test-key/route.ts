@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { createZernioClient } from "@/lib/zernio-client";
+import { updateWorkspaceCredentials } from "@/lib/workspace-credentials";
 import {
   ensureWebhookRegistered,
   getOrCreateWorkspaceWebhookSecret,
@@ -39,27 +40,48 @@ export async function POST(request: NextRequest) {
   // If workspaceId provided, save the key and sync channels
   if (workspaceId) {
     const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    // Save the API key
-    const { error: saveErr } = await supabase
-      .from("workspaces")
-      .update({ late_api_key_encrypted: apiKey.trim() })
-      .eq("id", workspaceId)
-      .select("id")
+    const { data: membership } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("workspace_id", workspaceId)
+      .eq("user_id", user.id)
       .single();
-
-    if (saveErr) {
+    if (membership?.role !== "owner") {
       return NextResponse.json(
-        { error: `Key valid but failed to save: ${saveErr.message}` },
+        { error: "Only the workspace owner can update integration keys" },
+        { status: 403 }
+      );
+    }
+
+    try {
+      await updateWorkspaceCredentials(workspaceId, {
+        late_api_key_encrypted: apiKey.trim(),
+      });
+    } catch (saveError) {
+      return NextResponse.json(
+        {
+          error: `Key valid but failed to save: ${
+            saveError instanceof Error ? saveError.message : "Unknown error"
+          }`,
+        },
         { status: 500 }
       );
     }
+
+    const serviceClient = await createServiceClient();
 
     // Register (or refresh) this deployment's webhook in Zernio so inbound
     // messages/comments reach the Inbox. Best-effort: a failure here must not
     // block saving the key or syncing channels.
     try {
-      const secret = await getOrCreateWorkspaceWebhookSecret(supabase, workspaceId);
+      const secret = await getOrCreateWorkspaceWebhookSecret(serviceClient, workspaceId);
       const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
       const zernio = createZernioClient(apiKey.trim());
       await ensureWebhookRegistered(zernio, {
@@ -86,7 +108,7 @@ export async function POST(request: NextRequest) {
       if (existingByLateId.has(account._id)) continue;
       if (!isSupportedPlatform(account.platform)) continue;
 
-      const { error: insertErr } = await supabase.from("channels").insert({
+      const { error: insertErr } = await serviceClient.from("channels").insert({
         workspace_id: workspaceId,
         platform: account.platform,
         late_account_id: account._id,
@@ -103,14 +125,14 @@ export async function POST(request: NextRequest) {
     // Backfill conversations that predate webhook registration so a
     // first-time API-key setup fills the Inbox immediately (best-effort).
     try {
-      const { data: activeChannels } = await supabase
+      const { data: activeChannels } = await serviceClient
         .from("channels")
         .select("id, late_account_id, platform")
         .eq("workspace_id", workspaceId)
         .eq("is_active", true);
 
       await backfillInboxConversations({
-        supabase,
+        supabase: serviceClient,
         zernio: createZernioClient(apiKey.trim()),
         workspaceId,
         channels: activeChannels ?? [],

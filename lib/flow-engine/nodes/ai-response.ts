@@ -26,9 +26,9 @@ export async function executeAiResponse(
 ) {
   // Get workspace for Zernio API key + AI Gateway key
   const { data: workspace } = await supabase
-    .from("workspaces")
+    .from("workspace_integration_credentials")
     .select("late_api_key_encrypted, ai_api_key")
-    .eq("id", context.workspaceId)
+    .eq("workspace_id", context.workspaceId)
     .single();
 
   if (!workspace?.late_api_key_encrypted) {

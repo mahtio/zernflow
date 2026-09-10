@@ -1,0 +1,1 @@
+ALTER TABLE public.workspaces DROP COLUMN late_api_key_encrypted, DROP COLUMN ai_api_key, DROP COLUMN webhook_secret;

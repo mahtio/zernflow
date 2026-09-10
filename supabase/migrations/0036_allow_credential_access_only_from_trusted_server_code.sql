@@ -1,0 +1,1 @@
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.workspace_integration_credentials TO service_role;

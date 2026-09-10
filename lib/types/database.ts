@@ -72,8 +72,6 @@ export interface Database {
           id: string;
           name: string;
           slug: string;
-          late_api_key_encrypted: string | null;
-          ai_api_key: string | null;
           ai_provider: string;
           global_keywords: Json | null;
           created_at: string;
@@ -83,8 +81,6 @@ export interface Database {
           id?: string;
           name: string;
           slug: string;
-          late_api_key_encrypted?: string | null;
-          ai_api_key?: string | null;
           ai_provider?: string;
           global_keywords?: Json | null;
           created_at?: string;
@@ -94,10 +90,31 @@ export interface Database {
           id?: string;
           name?: string;
           slug?: string;
-          late_api_key_encrypted?: string | null;
-          ai_api_key?: string | null;
           ai_provider?: string;
           global_keywords?: Json | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      workspace_integration_credentials: {
+        Row: {
+          workspace_id: string;
+          late_api_key_encrypted: string | null;
+          ai_api_key: string | null;
+          webhook_secret: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          workspace_id: string;
+          late_api_key_encrypted?: string | null;
+          ai_api_key?: string | null;
+          webhook_secret?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          late_api_key_encrypted?: string | null;
+          ai_api_key?: string | null;
+          webhook_secret?: string | null;
           updated_at?: string;
         };
         Relationships: [];

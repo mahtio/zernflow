@@ -466,9 +466,9 @@ async function executeSendMessage(
 ) {
   // Get workspace for API key
   const { data: workspace } = await supabase
-    .from("workspaces")
+    .from("workspace_integration_credentials")
     .select("late_api_key_encrypted")
-    .eq("id", context.workspaceId)
+    .eq("workspace_id", context.workspaceId)
     .single();
 
   if (!workspace?.late_api_key_encrypted) return;
@@ -1012,9 +1012,9 @@ async function executeCommentReply(
   context: FlowExecutionContext
 ) {
   const { data: workspace } = await supabase
-    .from("workspaces")
+    .from("workspace_integration_credentials")
     .select("late_api_key_encrypted")
-    .eq("id", context.workspaceId)
+    .eq("workspace_id", context.workspaceId)
     .single();
 
   if (!workspace?.late_api_key_encrypted) return;
@@ -1065,9 +1065,9 @@ async function executePrivateReply(
   context: FlowExecutionContext
 ) {
   const { data: workspace } = await supabase
-    .from("workspaces")
+    .from("workspace_integration_credentials")
     .select("late_api_key_encrypted")
-    .eq("id", context.workspaceId)
+    .eq("workspace_id", context.workspaceId)
     .single();
 
   if (!workspace?.late_api_key_encrypted) return;
