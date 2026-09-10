@@ -1,7 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { WORKSPACE_COOKIE } from "@/lib/workspace";
 import { updateWorkspaceCredentials } from "@/lib/workspace-credentials";
 
@@ -92,24 +92,29 @@ export async function updateWorkspaceSettings(
   if (!membership) {
     return { error: "No access to this workspace" };
   }
+  if (membership.role !== "owner") {
+    return { error: "Only the workspace owner can update workspace settings" };
+  }
 
   const name = settings.name.trim();
   if (!name || name.length > 100) {
     return { error: "Workspace name must be between 1 and 100 characters" };
   }
-
-  const update: Record<string, unknown> = {
-    global_keywords: settings.globalKeywords,
-  };
-
-  if (membership.role === "owner") {
-    update.name = name;
+  if (
+    !Array.isArray(settings.globalKeywords) ||
+    settings.globalKeywords.some((keyword) => typeof keyword !== "string")
+  ) {
+    return { error: "Global keywords must be a list of strings" };
   }
 
-  const serviceClient = await createServiceClient();
-  const { error } = await serviceClient
+  // Explicitly allowlist the only workspace fields this action may update.
+  // The authenticated client keeps the owner-only RLS policy as a second layer.
+  const { error } = await supabase
     .from("workspaces")
-    .update(update)
+    .update({
+      name,
+      global_keywords: settings.globalKeywords,
+    })
     .eq("id", workspaceId);
 
   if (error) return { error: error.message };
@@ -126,9 +131,6 @@ export async function updateWorkspaceSettings(
   }
 
   if (Object.keys(credentials).length > 0) {
-    if (membership.role !== "owner") {
-      return { error: "Only the workspace owner can update integration keys" };
-    }
     try {
       await updateWorkspaceCredentials(workspaceId, credentials);
     } catch (credentialError) {
