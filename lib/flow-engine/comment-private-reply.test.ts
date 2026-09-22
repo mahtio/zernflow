@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeCommentPrivateReplies } from "./comment-private-reply";
+import { normalizeCommentPrivateReplies, shouldSendCommentPrivateReply } from "./comment-private-reply";
 import type { FlowEdge, FlowNode } from "./types";
 
 const trigger: FlowNode = {
@@ -75,5 +75,20 @@ describe("normalizeCommentPrivateReplies", () => {
     const result = normalizeCommentPrivateReplies([trigger, multiple], [edge], "flow-1");
     expect(result.errors.some((issue) => issue.code === "multiple_messages")).toBe(true);
     expect((result.nodes[1].data as any).messages).toHaveLength(1);
+  });
+
+  it("prioriza a resposta privada de um comentário novo", () => {
+    expect(shouldSendCommentPrivateReply(
+      { deliveryMode: "private_reply" },
+      { comment_id: "comment-2", post_id: "post-1", comment_dm_sent: "false" }
+    )).toBe(true);
+    expect(shouldSendCommentPrivateReply(
+      { deliveryMode: "private_reply" },
+      { comment_id: "comment-2", post_id: "post-1", comment_dm_sent: "true" }
+    )).toBe(false);
+    expect(shouldSendCommentPrivateReply(
+      { deliveryMode: "standard" },
+      { comment_id: "comment-2", post_id: "post-1", comment_dm_sent: "false" }
+    )).toBe(false);
   });
 });

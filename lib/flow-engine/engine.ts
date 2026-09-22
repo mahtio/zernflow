@@ -25,6 +25,7 @@ import { createZernioClient } from "@/lib/zernio-client";
 import { createTrackedLinkToken, createTrackedLinkUrl } from "@/lib/tracked-link";
 import { createOptionPayload, parseOptionPayload, resolveOptionEdge } from "./interaction-resolver";
 import { optionHandle } from "./message-options";
+import { shouldSendCommentPrivateReply } from "./comment-private-reply";
 
 export async function loadContactCustomVariables(
   supabase: SupabaseClient<Database>,
@@ -716,6 +717,23 @@ async function executeSendMessage(
     }
   }
 
+  // A new Instagram comment grants one private reply tied to that comment.
+  // Prefer that route even when the contact has an older DM conversation whose
+  // regular messaging window may already be closed.
+  if (shouldSendCommentPrivateReply(data, context.variables)) {
+    await sendFirstMessageAsPrivateReply(
+      supabase,
+      zernio,
+      data,
+      context,
+      lateAccountId,
+      sessionId,
+      node.id,
+      hasNextNode
+    );
+    return hasNextNode && Boolean(data.messages[0]?.options?.[0]) ? "pause" : undefined;
+  }
+
   // Resolve late_conversation_id from conversation if not in context
   let lateConversationId = context.lateConversationId;
   if (!lateConversationId) {
@@ -726,10 +744,8 @@ async function executeSendMessage(
       .single();
 
     if (!conversation?.late_conversation_id) {
-      // Comment-triggered flows have no DM conversation yet. Instagram allows
-      // exactly one private reply per comment. After that first private reply,
-      // further Send Message nodes must wait for the recipient to answer and
-      // create a regular DM conversation instead of retrying the same comment.
+      // Legacy comment flows may not yet have deliveryMode normalized. Preserve
+      // their first private reply when no DM conversation exists.
       if (context.variables?.comment_dm_sent === "true") {
         return;
       }

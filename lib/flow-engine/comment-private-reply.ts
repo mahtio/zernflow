@@ -1,4 +1,4 @@
-import type { FlowEdge, FlowNode, MessageOption, SendMessageNodeData } from "./types";
+import type { FlowEdge, FlowNode, FlowVariables, MessageOption, SendMessageNodeData } from "./types";
 import { isHttpsOptionUrl, optionHandle, reachablePathCanSend } from "./message-options";
 
 export const COMMENT_PRIVATE_REPLY_TIMEOUT_HOURS = 24;
@@ -16,6 +16,16 @@ export interface CommentPrivateReplyIssue {
   message: string;
   nodeId?: string;
   triggerId?: string;
+}
+
+export function shouldSendCommentPrivateReply(
+  data: Pick<SendMessageNodeData, "deliveryMode">,
+  variables?: FlowVariables
+): boolean {
+  return data.deliveryMode === "private_reply"
+    && Boolean(variables?.comment_id)
+    && Boolean(variables?.post_id)
+    && variables?.comment_dm_sent !== "true";
 }
 
 export interface CommentPrivateReplyNormalization {
