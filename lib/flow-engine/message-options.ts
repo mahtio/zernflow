@@ -207,13 +207,17 @@ export function validateMessageOptionGraph(nodes: FlowNode[], edges: FlowEdge[])
     for (const message of data.messages) issues.push(...messageOptionIssues(message, node.id));
     for (const option of options) {
       const outgoing = edges.filter((edge) => edge.source === node.id && edge.sourceHandle === optionHandle(option.id));
+      if (option.kind === "url") {
+        // Botões de página abrem uma URL externa: o destino é a própria URL, então não exigem conexão no fluxo.
+        if (outgoing.some((edge) => reachablePathCanSend(edge.target, nodes, edges))) {
+          issues.push({ code: "unsafe_message_path", nodeId: node.id, optionId: option.id, message: `O caminho do link “${option.title}” não pode alcançar um envio de mensagem.` });
+        }
+        continue;
+      }
       if (outgoing.length === 0) {
         issues.push({ code: "missing_option_edge", nodeId: node.id, optionId: option.id, message: `A opção “${option.title}” precisa de um destino.` });
       } else if (outgoing.length > 1) {
         issues.push({ code: "multiple_option_edges", nodeId: node.id, optionId: option.id, message: `A opção “${option.title}” aceita somente uma conexão.` });
-      }
-      if (option.kind === "url" && outgoing.some((edge) => reachablePathCanSend(edge.target, nodes, edges))) {
-        issues.push({ code: "unsafe_message_path", nodeId: node.id, optionId: option.id, message: `O caminho do link “${option.title}” não pode alcançar um envio de mensagem.` });
       }
     }
     if (data.deliveryMode === "private_reply") {
