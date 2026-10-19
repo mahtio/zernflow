@@ -149,7 +149,7 @@ export function simulateFlow(
     .filter((k) => k.length > 0);
   let triggerMatched = false;
 
-  if (triggerType === "keyword") {
+  if (triggerType === "keyword" || triggerType === "comment_keyword") {
     const msg = config.incomingMessage.toLowerCase();
     triggerMatched =
       keywords.length === 0 ||
@@ -292,7 +292,7 @@ export function simulateFlow(
             path: passed ? "true" : "false",
           },
         });
-        nextHandle = passed ? "true" : "false";
+        nextHandle = passed ? "yes" : "no";
         break;
       }
 

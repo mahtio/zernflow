@@ -906,7 +906,7 @@ async function executeCondition(
     .eq("id", context.contactId)
     .single();
 
-  if (!contact) return "handle:false";
+  if (!contact) return "handle:no";
 
   const now = new Date();
   const results = data.conditions.map((condition) => {
@@ -949,7 +949,7 @@ async function executeCondition(
   const passed =
     data.logic === "and" ? results.every(Boolean) : results.some(Boolean);
 
-  return passed ? "handle:true" : "handle:false";
+  return passed ? "handle:yes" : "handle:no";
 }
 
 function evaluateCondition(
