@@ -104,8 +104,9 @@ export interface SendMessageNodeData {
 export interface ConditionNodeData {
   conditions: Array<{
     field: string;
-    operator: "equals" | "not_equals" | "contains" | "exists" | "gt" | "lt";
+    operator: "equals" | "not_equals" | "contains" | "exists" | "gt" | "lt" | "before" | "after";
     value: string;
+    timezone?: string;
   }>;
   logic: "and" | "or";
 }

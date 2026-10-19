@@ -5,6 +5,7 @@
  */
 
 import type { Node, Edge } from "@xyflow/react";
+import { evaluateDateCondition } from "@/lib/flow-engine/date-condition";
 
 // --- Types ---
 
@@ -239,10 +240,13 @@ export function simulateFlow(
           field: string;
           operator: string;
           value: string;
+          timezone?: string;
         }>) || [];
         const logic = (data.logic as string) || "and";
+        const now = new Date();
 
         const results = conditions.map((c) => {
+          if (c.field === "current_datetime") return evaluateDateCondition(c, now);
           let fieldValue: string | undefined;
 
           if (c.field === "platform") {

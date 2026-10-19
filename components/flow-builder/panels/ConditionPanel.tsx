@@ -4,11 +4,13 @@ import { useCallback } from "react";
 import { Plus, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLocale } from "@/components/locale-provider";
+import { DEFAULT_CONDITION_TIMEZONE } from "@/lib/flow-engine/date-condition";
 
 interface Condition {
   field: string;
   operator: string;
   value: string;
+  timezone?: string;
 }
 
 interface ConditionPanelData {
@@ -29,6 +31,12 @@ const fieldOptions = [
   { value: "variable", label: "Variable" },
   { value: "is_subscribed", label: "Is Subscribed" },
   { value: "last_interaction", label: "Last Interaction" },
+  { value: "current_datetime", label: "Current date and time" },
+];
+
+const dateOperatorOptions = [
+  { value: "after", label: "after" },
+  { value: "before", label: "before" },
 ];
 
 const operatorOptions = [
@@ -43,8 +51,8 @@ const operatorOptions = [
 export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps) {
   const { locale } = useLocale();
   const pt = locale === "pt-BR";
-  const fieldLabels: Record<string, string> = { tag: "Etiqueta", custom_field: "Campo personalizado", platform: "Plataforma", variable: "Variável", is_subscribed: "Está inscrito", last_interaction: "Última interação" };
-  const operatorLabels: Record<string, string> = { equals: "é igual a", not_equals: "não é igual a", contains: "contém", exists: "existe", gt: "maior que", lt: "menor que" };
+  const fieldLabels: Record<string, string> = { tag: "Etiqueta", custom_field: "Campo personalizado", platform: "Plataforma", variable: "Variável", is_subscribed: "Está inscrito", last_interaction: "Última interação", current_datetime: "Data e hora atual" };
+  const operatorLabels: Record<string, string> = { equals: "é igual a", not_equals: "não é igual a", contains: "contém", exists: "existe", gt: "maior que", lt: "menor que", after: "após", before: "antes de" };
   const data = rawData as ConditionPanelData;
   const conditions = data.conditions || [];
   const logic = data.logic || "and";
@@ -134,9 +142,18 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
               <div className="space-y-2">
                 <select
                   value={condition.field}
-                  onChange={(e) =>
-                    updateCondition(index, { ...condition, field: e.target.value })
-                  }
+                  onChange={(e) => {
+                    const field = e.target.value;
+                    const dateChanged = field === "current_datetime" || condition.field === "current_datetime";
+                    updateCondition(index, {
+                      ...condition, field,
+                      ...(dateChanged ? {
+                        operator: field === "current_datetime" ? "after" : "equals",
+                        value: "",
+                        timezone: field === "current_datetime" ? DEFAULT_CONDITION_TIMEZONE : undefined,
+                      } : {}),
+                    });
+                  }}
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 >
                   {fieldOptions.map((f) => (
@@ -154,7 +171,7 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
                   }
                   className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                 >
-                  {operatorOptions.map((o) => (
+                  {(condition.field === "current_datetime" ? dateOperatorOptions : operatorOptions).map((o) => (
                     <option key={o.value} value={o.value}>
                       {pt ? operatorLabels[o.value] : o.label}
                     </option>
@@ -164,7 +181,8 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
                 {/* Value (hidden for "exists" operator) */}
                 {condition.operator !== "exists" && (
                   <input
-                    type="text"
+                    type={condition.field === "current_datetime" ? "datetime-local" : "text"}
+                    aria-label={pt ? "Valor da condição" : "Condition value"}
                     value={condition.value}
                     onChange={(e) =>
                       updateCondition(index, { ...condition, value: e.target.value })
@@ -172,6 +190,19 @@ export function ConditionPanel({ data: rawData, onChange }: ConditionPanelProps)
                     placeholder={pt ? "Valor..." : "Value..."}
                     className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
+                )}
+                {condition.field === "current_datetime" && (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {pt ? "Fuso horário fixo: São Paulo (America/Sao_Paulo)." : "Fixed time zone: São Paulo (America/Sao_Paulo)."}
+                    </p>
+                    {!condition.value && (
+                      <p className="text-xs text-amber-600">{pt ? "Selecione a data e o horário para completar a condição." : "Select a date and time to complete this condition."}</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      {pt ? "Compara o momento em que o contato chega a este bloco com a data e hora de São Paulo. Não agenda um disparo automático." : "Compares when the contact reaches this block with the date and time in São Paulo. Does not schedule an automatic trigger."}
+                    </p>
+                  </>
                 )}
               </div>
             </div>

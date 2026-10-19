@@ -26,6 +26,7 @@ import { createTrackedLinkToken, createTrackedLinkUrl } from "@/lib/tracked-link
 import { createOptionPayload, parseOptionPayload, resolveOptionEdge } from "./interaction-resolver";
 import { optionHandle } from "./message-options";
 import { shouldSendCommentPrivateReply } from "./comment-private-reply";
+import { evaluateDateCondition } from "@/lib/flow-engine/date-condition";
 
 export async function loadContactCustomVariables(
   supabase: SupabaseClient<Database>,
@@ -907,7 +908,9 @@ async function executeCondition(
 
   if (!contact) return "handle:false";
 
+  const now = new Date();
   const results = data.conditions.map((condition) => {
+    if (condition.field === "current_datetime") return evaluateDateCondition(condition, now);
     let fieldValue: string | undefined;
 
     // Check built-in fields
