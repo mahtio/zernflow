@@ -39,6 +39,9 @@ import { AiResponseNode } from "./nodes/AiResponseNode";
 import { NodeConfigSidebar } from "./panels/NodeConfigSidebar";
 import { VersionHistoryPanel } from "./panels/VersionHistoryPanel";
 import { TestPanel } from "./panels/TestPanel";
+import { DeletableEdge } from "./deletable-edge";
+
+const edgeTypes = { default: DeletableEdge };
 
 type Flow = Database["public"]["Tables"]["flows"]["Row"];
 type CustomFieldDefinition = Pick<
@@ -576,6 +579,7 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
             onNodeClick={onNodeClick}
             onPaneClick={onPaneClick}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             fitView
             deleteKeyCode={["Backspace", "Delete"]}
             proOptions={{ hideAttribution: true }}
