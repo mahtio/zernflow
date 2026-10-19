@@ -42,18 +42,53 @@ export function createPrivateReplyPostbackPayload(flowId: string, nodeId: string
   return `flow_option:${flowId}:${nodeId}:${optionId}`;
 }
 
-export function getCommentPrivateReplyNodeIds(
-  nodes: FlowNode[],
-  edges: FlowEdge[]
-): Set<string> {
+function findCommentPrivateReplies(nodes: FlowNode[], edges: FlowEdge[]) {
   const ids = new Set<string>();
+  const errors: CommentPrivateReplyIssue[] = [];
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
   for (const trigger of nodes) {
     const triggerType = (trigger.data as { triggerType?: string }).triggerType;
     if (trigger.type !== "trigger" || triggerType !== "comment_keyword") continue;
     const outputs = edges.filter((edge) => edge.source === trigger.id);
-    if (outputs.length === 1) ids.add(outputs[0].target);
+    if (outputs.length > 1) {
+      errors.push({ code: "multiple_trigger_outputs", triggerId: trigger.id, message: "O gatilho de comentário deve ter exatamente uma saída." });
+      continue;
+    }
+    const visited = new Set<string>();
+    const active = new Set<string>([trigger.id]);
+    const visit = (nodeId: string) => {
+      if (active.has(nodeId)) {
+        errors.push({ code: "immediate_cycle", triggerId: trigger.id, nodeId, message: "Não é permitido criar um ciclo antes da resposta privada do comentário." });
+        return;
+      }
+      if (visited.has(nodeId)) return;
+      visited.add(nodeId);
+      const node = nodeById.get(nodeId);
+      if (node?.type === "sendMessage") {
+        ids.add(node.id);
+        if (edges.some((edge) => edge.source === node.id && (edge.target === trigger.id || active.has(edge.target)))) {
+          errors.push({ code: "immediate_cycle", triggerId: trigger.id, nodeId, message: "Não é permitido criar um ciclo imediatamente após o gatilho de comentário." });
+        }
+        return;
+      }
+      if (node?.type !== "condition") {
+        errors.push({ code: "invalid_first_node", triggerId: trigger.id, nodeId, message: "Antes da primeira mensagem de um comentário, use somente nós de Condição. A primeira mensagem será uma resposta privada." });
+        return;
+      }
+      active.add(nodeId);
+      for (const edge of edges.filter((edge) => edge.source === nodeId)) visit(edge.target);
+      active.delete(nodeId);
+    };
+    for (const output of outputs) visit(output.target);
   }
-  return ids;
+  return { ids, errors };
+}
+
+export function getCommentPrivateReplyNodeIds(
+  nodes: FlowNode[],
+  edges: FlowEdge[]
+): Set<string> {
+  return findCommentPrivateReplies(nodes, edges).ids;
 }
 
 function normalizePrivateMessage(
@@ -103,43 +138,7 @@ export function normalizeCommentPrivateReplies(
   edges: FlowEdge[],
   flowId: string
 ): CommentPrivateReplyNormalization {
-  const errors: CommentPrivateReplyIssue[] = [];
-  const privateNodeIds = new Set<string>();
-
-  for (const trigger of nodes) {
-    const triggerType = (trigger.data as { triggerType?: string }).triggerType;
-    if (trigger.type !== "trigger" || triggerType !== "comment_keyword") continue;
-    const outputs = edges.filter((edge) => edge.source === trigger.id);
-    if (outputs.length > 1) {
-      errors.push({
-        code: "multiple_trigger_outputs",
-        triggerId: trigger.id,
-        message: "O gatilho de comentário deve ter exatamente uma saída.",
-      });
-      continue;
-    }
-    if (outputs.length === 0) continue;
-    const first = nodes.find((node) => node.id === outputs[0].target);
-    if (!first || first.type !== "sendMessage") {
-      errors.push({
-        code: "invalid_first_node",
-        triggerId: trigger.id,
-        nodeId: first?.id,
-        message: "A primeira saída do gatilho de comentário deve ser um nó Enviar mensagem.",
-      });
-      continue;
-    }
-    if (edges.some((edge) => edge.source === first.id && edge.target === trigger.id)) {
-      errors.push({
-        code: "immediate_cycle",
-        triggerId: trigger.id,
-        nodeId: first.id,
-        message: "Não é permitido criar um ciclo imediatamente após o gatilho de comentário.",
-      });
-      continue;
-    }
-    privateNodeIds.add(first.id);
-  }
+  const { ids: privateNodeIds, errors } = findCommentPrivateReplies(nodes, edges);
 
   const migratedNodeIds: string[] = [];
   const normalizedNodes = nodes.map((node) => {

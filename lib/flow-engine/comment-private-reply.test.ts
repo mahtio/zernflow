@@ -77,6 +77,47 @@ describe("normalizeCommentPrivateReplies", () => {
     expect((result.nodes[1].data as any).messages).toHaveLength(1);
   });
 
+  it("normaliza a primeira mensagem de cada ramo após condições sem alterar mensagens posteriores", () => {
+    const condition: FlowNode = { id: "condition", type: "condition", position: { x: 0, y: 50 }, data: { conditions: [{ field: "current_datetime", operator: "after", value: "2026-10-19T05:00" }], logic: "and" } };
+    const nested = { ...condition, id: "nested" };
+    const alternative = { ...message, id: "alternative" };
+    const later = { ...message, id: "later" };
+    const edges: FlowEdge[] = [
+      { id: "a", source: trigger.id, target: condition.id },
+      { id: "b", source: condition.id, sourceHandle: "true", target: message.id },
+      { id: "c", source: condition.id, sourceHandle: "false", target: nested.id },
+      { id: "d", source: nested.id, sourceHandle: "true", target: alternative.id },
+      { id: "e", source: message.id, sourceHandle: "option:opt_private_first-message", target: later.id },
+    ];
+    const result = normalizeCommentPrivateReplies([trigger, condition, nested, message, alternative, later], edges, "flow-1");
+    expect(result.errors).toEqual([]);
+    expect(result.migratedNodeIds).toEqual([message.id, alternative.id]);
+    expect(result.nodes.find((node) => node.id === later.id)?.data).toEqual(later.data);
+    expect(normalizeCommentPrivateReplies(result.nodes, edges, "flow-1").changed).toBe(false);
+  });
+
+  it("permite ramos convergentes e detecta ciclos entre condições", () => {
+    const condition: FlowNode = { id: "condition", type: "condition", position: { x: 0, y: 50 }, data: { conditions: [], logic: "and" } };
+    const edges: FlowEdge[] = [
+      { id: "a", source: trigger.id, target: condition.id },
+      { id: "b", source: condition.id, sourceHandle: "true", target: message.id },
+      { id: "c", source: condition.id, sourceHandle: "false", target: message.id },
+    ];
+    expect(normalizeCommentPrivateReplies([trigger, condition, message], edges, "flow-1").errors).toEqual([]);
+    const cyclic = [...edges, { id: "cycle", source: condition.id, target: condition.id }];
+    expect(normalizeCommentPrivateReplies([trigger, condition, message], cyclic, "flow-1").errors.some((issue) => issue.code === "immediate_cycle")).toBe(true);
+  });
+
+  it("mantém as restrições da resposta privada nos ramos de uma condição", () => {
+    const condition: FlowNode = { id: "condition", type: "condition", position: { x: 0, y: 50 }, data: { conditions: [], logic: "and" } };
+    const multiple = { ...message, data: { messages: [{ text: "Primeira" }, { text: "Segunda" }] } };
+    const result = normalizeCommentPrivateReplies([trigger, condition, multiple], [
+      { id: "a", source: trigger.id, target: condition.id },
+      { id: "b", source: condition.id, sourceHandle: "true", target: message.id },
+    ], "flow-1");
+    expect(result.errors.some((issue) => issue.code === "multiple_messages")).toBe(true);
+  });
+
   it("prioriza a resposta privada de um comentário novo", () => {
     expect(shouldSendCommentPrivateReply(
       { deliveryMode: "private_reply" },

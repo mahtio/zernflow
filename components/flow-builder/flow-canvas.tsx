@@ -143,10 +143,10 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
       const source = nodes.find((node) => node.id === connection.source);
       const target = nodes.find((node) => node.id === connection.target);
       const sourceIsCommentTrigger = source?.type === "trigger" && source.data.triggerType === "comment_keyword";
-      if (sourceIsCommentTrigger && target?.type !== "sendMessage") {
+      if (sourceIsCommentTrigger && target?.type !== "sendMessage" && target?.type !== "condition") {
         setSaveError(pt
-          ? "A primeira saída de um gatilho de comentário deve ser Enviar mensagem."
-          : "A comment trigger must connect first to a Send Message node.");
+          ? "Após um gatilho de comentário, use Condição ou Enviar mensagem."
+          : "A comment trigger must connect to a Condition or Send Message node.");
         setTimeout(() => setSaveError(null), 4000);
         return;
       }
@@ -190,14 +190,21 @@ function FlowCanvasInner({ flow, customFields }: FlowCanvasProps) {
         setTimeout(() => setSaveError(null), 5000);
         return;
       }
-      if (sourceIsCommentTrigger && target) {
-        const normalized = normalizeCommentPrivateReplies(
-          nodes as unknown as FlowNode[],
-          proposedEdges,
-          flow.id
-        );
-        setNodes(normalized.nodes as unknown as Node[]);
+      const normalized = normalizeCommentPrivateReplies(
+        nodes as unknown as FlowNode[],
+        proposedEdges,
+        flow.id
+      );
+      const invalidCommentPath = normalized.errors.find((issue) =>
+        issue.code === "invalid_first_node" || issue.code === "immediate_cycle"
+      );
+      if (invalidCommentPath) {
+        setSaveError(invalidCommentPath.message);
+        setTimeout(() => setSaveError(null), 5000);
+        return;
       }
+      if (normalized.changed) setNodes(normalized.nodes as unknown as Node[]);
+      setSaveError(null);
       setEdges((current) =>
         addEdge(
           {
