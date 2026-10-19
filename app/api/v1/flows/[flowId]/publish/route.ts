@@ -38,12 +38,24 @@ export async function POST(
       { status: 404 }
     );
 
-  const optionNormalization = normalizeFlowMessageOptions(
-    (Array.isArray(flow.nodes) ? flow.nodes : []) as unknown as FlowNode[]
+  const nodes = (Array.isArray(flow.nodes) ? flow.nodes : []) as unknown as FlowNode[];
+  const edges = (Array.isArray(flow.edges) ? flow.edges : []) as unknown as FlowEdge[];
+  const disconnectedTrigger = nodes.find((node) =>
+    node.type === "trigger" &&
+    (node.data as { triggerType?: string }).triggerType === "comment_keyword" &&
+    !edges.some((edge) => edge.source === node.id && nodes.some((target) => target.id === edge.target))
   );
+  if (disconnectedTrigger) {
+    return NextResponse.json(
+      { error: "O gatilho de comentário está desconectado. Conecte-o a uma Condição ou Enviar mensagem antes de publicar.", nodeId: disconnectedTrigger.id },
+      { status: 422 }
+    );
+  }
+
+  const optionNormalization = normalizeFlowMessageOptions(nodes);
   const normalized = normalizeCommentPrivateReplies(
     optionNormalization.nodes,
-    (Array.isArray(flow.edges) ? flow.edges : []) as unknown as FlowEdge[],
+    edges,
     flowId
   );
   const optionIssues = [
