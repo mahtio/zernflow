@@ -41,28 +41,20 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("workspace_id")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
-
-  if (!membership) {
-    return NextResponse.json({ error: "No workspace" }, { status: 404 });
-  }
-
-  // Fetch the broadcast
+  // Fetch the broadcast. RLS restricts visibility to workspaces the user
+  // belongs to, so we derive the workspace from the broadcast itself instead
+  // of guessing one of the user's memberships.
   const { data: broadcast, error: broadcastErr } = await supabase
     .from("broadcasts")
     .select("*")
     .eq("id", broadcastId)
-    .eq("workspace_id", membership.workspace_id)
-    .single();
+    .maybeSingle();
 
   if (broadcastErr || !broadcast) {
     return NextResponse.json({ error: "Broadcast not found" }, { status: 404 });
   }
+
+  const workspaceId = broadcast.workspace_id;
 
   if (broadcast.status !== "draft" && broadcast.status !== "scheduled") {
     return NextResponse.json(
@@ -96,11 +88,7 @@ export async function POST(
 
   // Resolve contacts from segment filter
   const filter = broadcast.segment_filter as unknown as SegmentFilter | null;
-  const contactIds = await resolveContacts(
-    supabase,
-    membership.workspace_id,
-    filter
-  );
+  const contactIds = await resolveContacts(supabase, workspaceId, filter);
 
   if (contactIds.length === 0) {
     return NextResponse.json(
