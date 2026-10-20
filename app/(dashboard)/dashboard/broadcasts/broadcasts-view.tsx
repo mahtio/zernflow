@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Radio,
   Plus,
@@ -16,6 +16,8 @@ import {
   ArrowLeft,
   AlertCircle,
   Users,
+  Play,
+  Pause,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -390,6 +392,162 @@ function useAudience(broadcastId: string, enabled: boolean) {
   return { audience, loading, error };
 }
 
+/**
+ * Drains the job queue from the browser while a broadcast is sending.
+ * Deliveries run in the queue worker, which needs an external trigger; until a
+ * cron is wired up this panel is that trigger, and it also gives live progress.
+ */
+function QueueRunner({
+  broadcast,
+  onUpdate,
+}: {
+  broadcast: Broadcast;
+  onUpdate: (updated: Broadcast) => void;
+}) {
+  const { locale } = useLocale();
+  const pt = locale === "pt-BR";
+  const [running, setRunning] = useState(false);
+  const [unfinished, setUnfinished] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const stopRef = useRef(false);
+  const startedRef = useRef(false);
+
+  // Kept in a ref: the parent passes a fresh closure on every render, and
+  // depending on it directly would re-trigger the effects below in a loop.
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  const refresh = useCallback(async () => {
+    const supabase = createClient();
+    const [{ data: row }, { count }] = await Promise.all([
+      supabase.from("broadcasts").select("*").eq("id", broadcast.id).maybeSingle(),
+      supabase
+        .from("broadcast_recipients")
+        .select("id", { count: "exact", head: true })
+        .eq("broadcast_id", broadcast.id)
+        .in("status", ["pending", "sending"]),
+    ]);
+    if (row) onUpdateRef.current(row);
+    setUnfinished(count ?? 0);
+  }, [broadcast.id]);
+
+  const run = useCallback(async () => {
+    stopRef.current = false;
+    setRunning(true);
+    setError(null);
+    try {
+      // Bounded so a worker that keeps returning due jobs cannot loop forever.
+      for (let i = 0; i < 1000; i++) {
+        if (stopRef.current) break;
+
+        const res = await fetch("/api/cron/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ limit: 25 }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to process queue");
+
+        await refresh();
+        if (data.total === 0) break;
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to process queue"
+      );
+    } finally {
+      setRunning(false);
+    }
+  }, [refresh]);
+
+  // Start as soon as the broadcast is opened: the send was already confirmed,
+  // so the only thing missing is someone turning the crank. No unmount
+  // cleanup on purpose — Strict Mode's double-invoke would stop the drain
+  // right after its first batch, and letting an open run finish is harmless
+  // (claims are CAS-guarded, so a second runner cannot double-send).
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    run();
+  }, [run]);
+
+  const sent = broadcast.sent;
+  const failed = broadcast.failed;
+  const total = broadcast.total_recipients;
+  const done = total > 0 ? Math.round(((sent + failed) / total) * 100) : 0;
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          {running ? (
+            <Loader2 className="h-5 w-5 shrink-0 animate-spin text-primary" />
+          ) : (
+            <Send className="h-5 w-5 shrink-0 text-muted-foreground" />
+          )}
+          <div>
+            <p className="text-sm font-medium">
+              {running
+                ? pt
+                  ? "Processando a fila de envio..."
+                  : "Processing the delivery queue..."
+                : pt
+                  ? "Fila de envio pausada"
+                  : "Delivery queue paused"}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {pt
+                ? `${sent + failed} de ${total} processados · ${unfinished ?? "…"} restantes`
+                : `${sent + failed} of ${total} processed · ${unfinished ?? "…"} remaining`}
+            </p>
+          </div>
+        </div>
+
+        {running ? (
+          <button
+            onClick={() => {
+              stopRef.current = true;
+            }}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent"
+          >
+            <Pause className="h-4 w-4" />
+            {pt ? "Pausar" : "Pause"}
+          </button>
+        ) : (
+          <button
+            onClick={run}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <Play className="h-4 w-4" />
+            {pt ? "Continuar" : "Resume"}
+          </button>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-primary transition-all"
+          style={{ width: `${done}%` }}
+        />
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        {pt
+          ? "Mantenha esta página aberta até terminar. Contatos sem conversa sincronizada na caixa de entrada são contados como falha, porque o Zernio só entrega dentro de uma conversa existente."
+          : "Keep this page open until it finishes. Contacts without a synced inbox conversation are counted as failures, because Zernio can only deliver into an existing conversation."}
+      </p>
+
+      {error && (
+        <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-900/20 dark:text-red-400">
+          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+          {error}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BroadcastDetail({
   broadcast,
   workspaceId,
@@ -543,6 +701,11 @@ function BroadcastDetail({
                 <p className="text-xs text-muted-foreground">{pt ? "Falhas" : "Failed"}</p>
               </div>
             </div>
+          )}
+
+          {/* Live queue drain while the broadcast is sending */}
+          {broadcast.status === "sending" && (
+            <QueueRunner broadcast={broadcast} onUpdate={onUpdate} />
           )}
 
           {/* Audience preview for drafts */}

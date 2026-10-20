@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { FlowLoadError, resumeSession } from "@/lib/flow-engine/engine";
 import type { Json } from "@/lib/types/database";
 
@@ -28,6 +28,9 @@ function wasSessionWrittenRecently(updatedAt: string): boolean {
   return new Date(updatedAt).getTime() > Date.now() - STALE_INVOCATION_MS;
 }
 
+const DEFAULT_BATCH_SIZE = 20;
+const MAX_MANUAL_BATCH_SIZE = 25;
+
 /**
  * Cron job handler that processes scheduled jobs.
  * Call via Vercel Cron or external cron every 10-30 seconds.
@@ -44,6 +47,43 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  return runDueJobs(DEFAULT_BATCH_SIZE);
+}
+
+/**
+ * Manual drain for signed-in users. The queue is system-wide and the response
+ * carries only counts, so no caller-specific data can leak; the only effect is
+ * running work that was already scheduled. This is what lets the dashboard
+ * flush a stuck broadcast when no external cron is wired up yet.
+ * POST is used instead of GET so a cross-site request cannot trigger it.
+ */
+export async function POST(request: NextRequest) {
+  const authClient = await createClient();
+  const {
+    data: { user },
+  } = await authClient.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  let batchSize = MAX_MANUAL_BATCH_SIZE;
+  try {
+    const body = await request.json();
+    if (typeof body?.limit === "number" && Number.isFinite(body.limit)) {
+      batchSize = Math.min(
+        Math.max(1, Math.floor(body.limit)),
+        MAX_MANUAL_BATCH_SIZE
+      );
+    }
+  } catch {
+    // No body or invalid JSON: use the default batch size
+  }
+
+  return runDueJobs(batchSize);
+}
+
+async function runDueJobs(batchSize: number) {
   const supabase = await createServiceClient();
 
   // Prune the webhook idempotency ledger; ids only matter for Zernio's retry
@@ -70,7 +110,7 @@ export async function GET(request: NextRequest) {
     )
     .lte("run_at", new Date().toISOString())
     .order("run_at", { ascending: true })
-    .limit(20);
+    .limit(batchSize);
 
   if (error || !jobs) {
     return NextResponse.json({ error: "Failed to fetch jobs" }, { status: 500 });
@@ -595,31 +635,77 @@ async function processJob(
 
       // Get workspace API key
       const broadcast = recipient.broadcasts as { workspace_id: string } | null;
-      if (!broadcast) return;
+      if (!broadcast) {
+        await failRecipientPermanently({
+          supabase,
+          broadcastId: payload.broadcastId,
+          recipientId: payload.recipientId,
+          reason: "Broadcast no longer exists",
+        });
+        return;
+      }
 
-      const { data: workspace } = await supabase
+      const { data: workspace, error: workspaceError } = await supabase
         .from("workspace_integration_credentials")
         .select("late_api_key_encrypted")
         .eq("workspace_id", broadcast.workspace_id)
-        .single();
+        .maybeSingle();
 
-      if (!workspace?.late_api_key_encrypted) return;
+      if (workspaceError) {
+        throw new Error(
+          `could not load credentials for workspace ${broadcast.workspace_id}: ${workspaceError.message}`
+        );
+      }
+      if (!workspace?.late_api_key_encrypted) {
+        await failRecipientPermanently({
+          supabase,
+          broadcastId: payload.broadcastId,
+          recipientId: payload.recipientId,
+          reason: "Workspace has no Zernio API key configured",
+        });
+        return;
+      }
 
       const { createZernioClient } = await import("@/lib/zernio-client");
       const zernio = createZernioClient(workspace.late_api_key_encrypted);
 
       const channel = recipient.channels as { late_account_id: string } | null;
-      if (!channel) return;
+      if (!channel) {
+        await failRecipientPermanently({
+          supabase,
+          broadcastId: payload.broadcastId,
+          recipientId: payload.recipientId,
+          reason: "Recipient channel no longer exists",
+        });
+        return;
+      }
 
       // Get the conversation for this contact+channel (need late_conversation_id)
-      const { data: conv } = await supabase
+      const { data: conv, error: convError } = await supabase
         .from("conversations")
         .select("late_conversation_id")
         .eq("contact_id", recipient.contact_id)
         .eq("channel_id", recipient.channel_id)
-        .single();
+        .maybeSingle();
 
-      if (!conv?.late_conversation_id) return;
+      if (convError) {
+        throw new Error(
+          `could not load conversation for recipient ${payload.recipientId}: ${convError.message}`
+        );
+      }
+      if (!conv?.late_conversation_id) {
+        // Zernio can only deliver into an existing inbox conversation, so a
+        // contact that never messaged this channel is unreachable. Retrying
+        // cannot create the conversation, and leaving the recipient 'pending'
+        // would strand the whole broadcast in 'sending' forever.
+        await failRecipientPermanently({
+          supabase,
+          broadcastId: payload.broadcastId,
+          recipientId: payload.recipientId,
+          reason: "No synced conversation for this contact on this channel",
+        });
+        return;
+      }
 
       const broadcastData = recipient.broadcasts as { message_content: { text?: string } } | null;
       const messageContent = broadcastData?.message_content;
@@ -678,6 +764,42 @@ async function processJob(
     default:
       console.warn(`Unknown job type: ${job.type}`);
   }
+}
+
+// Settles a recipient that can never be delivered (no API key, no channel, no
+// synced conversation). Retrying cannot fix any of these, and leaving the row
+// 'pending' would keep the broadcast in 'sending' forever, so record the
+// reason now and let the job complete.
+async function failRecipientPermanently({
+  supabase,
+  broadcastId,
+  recipientId,
+  reason,
+}: {
+  supabase: Awaited<ReturnType<typeof createServiceClient>>;
+  broadcastId: string;
+  recipientId: string;
+  reason: string;
+}) {
+  const { data: settled, error } = await supabase
+    .from("broadcast_recipients")
+    .update({ status: "failed", error_message: reason })
+    .eq("id", recipientId)
+    .eq("status", "pending")
+    .select();
+
+  if (error) {
+    // Unknown outcome: throw so the job retries instead of completing and
+    // stranding the recipient in 'pending'.
+    throw new Error(
+      `failed to settle unreachable broadcast recipient ${recipientId}: ${error.message}`
+    );
+  }
+  if (settled && settled.length > 0) {
+    await supabase.rpc("increment_broadcast_failed", { b_id: broadcastId });
+  }
+
+  await settleBroadcastIfDone(supabase, broadcastId);
 }
 
 // Marks the broadcast completed once no recipient is left unfinished.
