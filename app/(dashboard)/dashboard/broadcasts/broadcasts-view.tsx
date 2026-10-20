@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { processBroadcastQueueBatch } from "@/lib/broadcast-queue";
 import { useLocale } from "@/components/locale-provider";
 import {
   SegmentBuilder,
@@ -420,7 +421,7 @@ function QueueRunner({
 
   const refresh = useCallback(async () => {
     const supabase = createClient();
-    const [{ data: row }, { count }] = await Promise.all([
+    const [broadcastResult, recipientsResult] = await Promise.all([
       supabase.from("broadcasts").select("*").eq("id", broadcast.id).maybeSingle(),
       supabase
         .from("broadcast_recipients")
@@ -428,8 +429,10 @@ function QueueRunner({
         .eq("broadcast_id", broadcast.id)
         .in("status", ["pending", "sending"]),
     ]);
-    if (row) onUpdateRef.current(row);
-    setUnfinished(count ?? 0);
+    if (broadcastResult.error) throw new Error(broadcastResult.error.message);
+    if (recipientsResult.error) throw new Error(recipientsResult.error.message);
+    if (broadcastResult.data) onUpdateRef.current(broadcastResult.data);
+    setUnfinished(recipientsResult.count);
   }, [broadcast.id]);
 
   const run = useCallback(async () => {
@@ -437,29 +440,25 @@ function QueueRunner({
     setRunning(true);
     setError(null);
     try {
+      await refresh();
       // Bounded so a worker that keeps returning due jobs cannot loop forever.
       for (let i = 0; i < 1000; i++) {
         if (stopRef.current) break;
 
-        const res = await fetch("/api/cron/jobs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ limit: 25 }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to process queue");
-
+        const data = await processBroadcastQueueBatch();
         await refresh();
         if (data.total === 0) break;
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to process queue"
+      const detail = err instanceof Error ? err.message : String(err);
+      setError(pt
+        ? `Não foi possível atualizar ou continuar a fila. Isso não confirma falha no envio: o servidor pode ter continuado processando. Verifique a conexão e clique em Continuar para consultar o progresso e retomar. Detalhe: ${detail}`
+        : `Unable to refresh or continue the queue. This does not confirm a delivery failure: the server may still have been processing. Check your connection and click Resume to refresh progress and continue. Detail: ${detail}`
       );
     } finally {
       setRunning(false);
     }
-  }, [refresh]);
+  }, [refresh, pt]);
 
   // Start as soon as the broadcast is opened: the send was already confirmed,
   // so the only thing missing is someone turning the crank. No unmount
@@ -498,8 +497,8 @@ function QueueRunner({
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {pt
-                ? `${sent + failed} de ${total} processados · ${unfinished ?? "…"} restantes`
-                : `${sent + failed} of ${total} processed · ${unfinished ?? "…"} remaining`}
+                ? `${sent + failed} de ${total} processados · ${unfinished ?? Math.max(0, total - sent - failed)} restantes`
+                : `${sent + failed} of ${total} processed · ${unfinished ?? Math.max(0, total - sent - failed)} remaining`}
             </p>
           </div>
         </div>
@@ -535,8 +534,8 @@ function QueueRunner({
 
       <p className="text-xs text-muted-foreground">
         {pt
-          ? "Mantenha esta página aberta até terminar. Contatos sem conversa sincronizada na caixa de entrada são contados como falha, porque o Zernio só entrega dentro de uma conversa existente."
-          : "Keep this page open until it finishes. Contacts without a synced inbox conversation are counted as failures, because Zernio can only deliver into an existing conversation."}
+          ? "Mantenha esta página aberta até terminar. Em caso de falha temporária de rede, o painel tenta reconectar automaticamente. Processados inclui enviados e falhas; contatos sem conversa sincronizada ou com a janela de 24h fechada não recebem a mensagem nesta tentativa."
+          : "Keep this page open until it finishes. The panel automatically retries temporary network failures. Processed includes sent and failed recipients; contacts without a synced conversation or with a closed 24h window do not receive the message on this attempt."}
       </p>
 
       {error && (
