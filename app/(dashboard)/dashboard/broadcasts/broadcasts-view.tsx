@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Radio,
   Plus,
@@ -15,6 +15,7 @@ import {
   ChevronDown,
   ArrowLeft,
   AlertCircle,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -299,7 +300,9 @@ export function BroadcastsView({
                   {/* Stats */}
                   <div className="flex items-center gap-6">
                     <div className="text-center">
-                      <p className="text-lg font-semibold">{total}</p>
+                      <p className="text-lg font-semibold">
+                        {broadcast.status === "draft" && total === 0 ? "—" : total}
+                      </p>
                       <p className="text-[10px] uppercase text-muted-foreground">
                         {pt ? "Destinatários" : "Recipients"}
                       </p>
@@ -339,6 +342,54 @@ export function BroadcastsView({
   );
 }
 
+interface Audience {
+  matched: number;
+  reachable: number;
+}
+
+/** Live audience size for a draft: how many contacts the filter resolves to. */
+function useAudience(broadcastId: string, enabled: boolean) {
+  const [audience, setAudience] = useState<Audience | null>(null);
+  const [loading, setLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      setLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    (async () => {
+      try {
+        const res = await fetch("/api/v1/broadcasts/audience", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ broadcastId }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Failed to load audience");
+        if (!cancelled) setAudience(data as Audience);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load audience");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [broadcastId, enabled]);
+
+  return { audience, loading, error };
+}
+
 function BroadcastDetail({
   broadcast,
   workspaceId,
@@ -365,6 +416,10 @@ function BroadcastDetail({
     ? { draft: "Rascunho", scheduled: "Agendada", sending: "Enviando", completed: "Concluída", cancelled: "Cancelada" }[broadcast.status]
     : status.label;
   const StatusIcon = status.icon;
+  const { audience, loading: audienceLoading } = useAudience(
+    broadcast.id,
+    isDraft
+  );
 
   async function handleSave() {
     setSaving(true);
@@ -490,6 +545,48 @@ function BroadcastDetail({
             </div>
           )}
 
+          {/* Audience preview for drafts */}
+          {isDraft && (
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-3">
+                <Users className="h-5 w-5 shrink-0 text-muted-foreground" />
+                {audienceLoading ? (
+                  <p className="text-sm text-muted-foreground">
+                    {pt ? "Calculando audiência..." : "Calculating audience..."}
+                  </p>
+                ) : audience ? (
+                  <div>
+                    <p className="text-sm font-medium">
+                      {pt
+                        ? `${audience.reachable} contatos receberão esta transmissão`
+                        : `${audience.reachable} contacts will receive this broadcast`}
+                    </p>
+                    {audience.matched !== audience.reachable && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {pt
+                          ? `${audience.matched} contatos correspondem ao filtro, mas ${audience.matched - audience.reachable} não têm um canal conectado.`
+                          : `${audience.matched} contacts match the filter, but ${audience.matched - audience.reachable} have no connected channel.`}
+                      </p>
+                    )}
+                    {audience.reachable === 0 && (
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {pt
+                          ? "Ajuste o filtro de segmento ou conecte um canal para poder enviar."
+                          : "Adjust the segment filter or connect a channel to be able to send."}
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {pt
+                      ? "Não foi possível calcular a audiência."
+                      : "Could not calculate the audience."}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Message composer */}
           <div className="space-y-3">
             <label className="text-sm font-medium">{pt ? "Mensagem" : "Message"}</label>
@@ -542,7 +639,9 @@ function BroadcastDetail({
             <div className="flex items-center gap-3 pt-2">
               <button
                 onClick={handleSend}
-                disabled={sending || !messageText.trim()}
+                disabled={
+                  sending || !messageText.trim() || audience?.reachable === 0
+                }
                 className="inline-flex items-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >
                 {sending ? (
