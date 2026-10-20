@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { FlowLoadError, resumeSession } from "@/lib/flow-engine/engine";
+import {
+  NO_CONVERSATION_REASON,
+  WINDOW_CLOSED_REASON,
+  isReplyWindowOpen,
+  isWindowClosedError,
+} from "@/lib/broadcast-window";
 import type { Json } from "@/lib/types/database";
 
 // Signals the handler to skip retry/backoff and route straight to the
@@ -680,10 +686,10 @@ async function processJob(
         return;
       }
 
-      // Get the conversation for this contact+channel (need late_conversation_id)
+      // Load the conversation and check the window before claiming a send.
       const { data: conv, error: convError } = await supabase
         .from("conversations")
-        .select("late_conversation_id")
+        .select("late_conversation_id, platform, last_message_at")
         .eq("contact_id", recipient.contact_id)
         .eq("channel_id", recipient.channel_id)
         .maybeSingle();
@@ -702,7 +708,22 @@ async function processJob(
           supabase,
           broadcastId: payload.broadcastId,
           recipientId: payload.recipientId,
-          reason: "No synced conversation for this contact on this channel",
+          reason: NO_CONVERSATION_REASON,
+        });
+        return;
+      }
+
+      if (!isReplyWindowOpen({
+        platform: conv.platform,
+        lastMessageAt: conv.last_message_at,
+      })) {
+        // Park as a retriable failure and complete this job without calling
+        // Zernio. A new inbound message and explicit retry can release it.
+        await failRecipientPermanently({
+          supabase,
+          broadcastId: payload.broadcastId,
+          recipientId: payload.recipientId,
+          reason: WINDOW_CLOSED_REASON,
         });
         return;
       }
@@ -744,11 +765,12 @@ async function processJob(
           b_id: payload.broadcastId,
         });
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         await supabase
           .from("broadcast_recipients")
           .update({
             status: "failed",
-            error_message: err instanceof Error ? err.message : String(err),
+            error_message: isWindowClosedError(message) ? WINDOW_CLOSED_REASON : message,
           })
           .eq("id", payload.recipientId);
 
@@ -766,10 +788,10 @@ async function processJob(
   }
 }
 
-// Settles a recipient that can never be delivered (no API key, no channel, no
-// synced conversation). Retrying cannot fix any of these, and leaving the row
-// 'pending' would keep the broadcast in 'sending' forever, so record the
-// reason now and let the job complete.
+// Settles a recipient that cannot be delivered now, letting the job complete
+// instead of leaving the broadcast stuck. Shared retriable reasons allow an
+// explicit retry once the conversation is linked or its window reopens;
+// all other reasons remain final.
 async function failRecipientPermanently({
   supabase,
   broadcastId,

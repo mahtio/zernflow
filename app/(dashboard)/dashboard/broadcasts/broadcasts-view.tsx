@@ -570,6 +570,7 @@ function BroadcastDetail({
   const [success, setSuccess] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [retryInfo, setRetryInfo] = useState<string | null>(null);
+  const [retryProgress, setRetryProgress] = useState<string | null>(null);
   // Bumped after a retry so the queue runner remounts and starts draining the
   // newly queued jobs instead of sitting on its already-finished loop.
   const [queueNonce, setQueueNonce] = useState(0);
@@ -611,8 +612,62 @@ function BroadcastDetail({
     setRetrying(true);
     setError(null);
     setRetryInfo(null);
+    setRetryProgress(pt ? "Carregando canais..." : "Loading channels...");
+
+    const supabase = createClient();
 
     try {
+      const { data: channels, error: channelsError } = await supabase
+        .from("channels")
+        .select("id")
+        .eq("workspace_id", workspaceId)
+        .eq("is_active", true);
+
+      if (channelsError) throw new Error(channelsError.message);
+      if (!channels?.length) {
+        throw new Error(
+          pt
+            ? "Nenhum canal ativo neste workspace."
+            : "No active channel in this workspace."
+        );
+      }
+
+      // The inbox is synced in short successive requests. Draining it in one
+      // call takes minutes, which the browser gives up on as a bare
+      // "NetworkError", so the loop lives here instead of on the server.
+      let processed = 0;
+      let linked = 0;
+
+      for (const channel of channels) {
+        let cursor: string | null = null;
+
+        // Bounded so a cursor that never settles cannot loop forever.
+        for (let page = 0; page < 200; page++) {
+          const res = await fetch(`/api/v1/channels/${channel.id}/sync-inbox`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cursor }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || "Failed to sync the inbox");
+
+          processed += data.imported + data.linked;
+          linked += data.linked;
+          setRetryProgress(
+            pt
+              ? `Sincronizando a caixa de entrada... ${processed} conversas vinculadas`
+              : `Syncing the inbox... ${processed} conversations linked`
+          );
+
+          cursor = data.nextCursor;
+          if (!cursor) break;
+        }
+      }
+
+      setRetryProgress(
+        pt ? "Reenfileirando destinatários..." : "Re-queueing recipients..."
+      );
+
       const res = await fetch(
         `/api/v1/broadcasts/${broadcast.id}/retry-unreachable`,
         { method: "POST" }
@@ -620,21 +675,31 @@ function BroadcastDetail({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to retry");
 
-      setRetryInfo(
-        pt
-          ? `${data.conversationsLinked} conversas vinculadas, ${data.conversationsImported} importadas · ${data.requeued} destinatários reenfileirados${
-              data.stillUnreachable
-                ? ` · ${data.stillUnreachable} seguem sem conversa`
-                : ""
-            }`
-          : `${data.conversationsLinked} conversations linked, ${data.conversationsImported} imported · ${data.requeued} recipients re-queued${
-              data.stillUnreachable
-                ? ` · ${data.stillUnreachable} still have no conversation`
-                : ""
-            }`
-      );
+      const parts = pt
+        ? [
+            `${linked} conversas vinculadas`,
+            `${data.requeued} destinatários reenfileirados`,
+          ]
+        : [
+            `${linked} conversations linked`,
+            `${data.requeued} recipients re-queued`,
+          ];
+      if (data.outsideWindow > 0) {
+        parts.push(
+          pt
+            ? `${data.outsideWindow} fora da janela de 24h`
+            : `${data.outsideWindow} outside the 24h window`
+        );
+      }
+      if (data.stillUnlinked > 0) {
+        parts.push(
+          pt
+            ? `${data.stillUnlinked} sem conversa no Zernio`
+            : `${data.stillUnlinked} with no Zernio conversation`
+        );
+      }
+      setRetryInfo(parts.join(" · "));
 
-      const supabase = createClient();
       const { data: row } = await supabase
         .from("broadcasts")
         .select("*")
@@ -647,6 +712,7 @@ function BroadcastDetail({
       setError(err instanceof Error ? err.message : "Failed to retry");
     } finally {
       setRetrying(false);
+      setRetryProgress(null);
     }
   }
 
@@ -773,9 +839,14 @@ function BroadcastDetail({
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {pt
-                      ? "Contatos vindos de comentários têm conversa criada antes do DM existir, então ficam sem o identificador do Zernio. Sincronize a caixa de entrada para vincular e reenviar — a mensagem salva é reaproveitada sem alteração."
-                      : "Contacts coming from comments get a conversation before any DM exists, so they carry no Zernio id. Sync the inbox to link them and retry — the saved message is reused unchanged."}
+                      ? "Contatos vindos de comentários têm conversa criada antes do DM existir, então ficam sem o identificador do Zernio. Sincronize a caixa de entrada para vincular e reenviar — a mensagem salva é reaproveitada sem alteração. Instagram, Facebook e WhatsApp só aceitam resposta até 24h após a última mensagem da pessoa, então quem está fora dessa janela é deixado de lado em vez de queimar a tentativa."
+                      : "Contacts coming from comments get a conversation before any DM exists, so they carry no Zernio id. Sync the inbox to link them and retry — the saved message is reused unchanged. Instagram, Facebook and WhatsApp only accept a reply within 24h of the person's last message, so anyone outside that window is skipped instead of burning the attempt."}
                   </p>
+                  {retryProgress && (
+                    <p className="mt-2 text-xs font-medium text-primary">
+                      {retryProgress}
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={handleRetryUnreachable}

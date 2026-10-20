@@ -137,7 +137,7 @@ export async function backfillInboxConversations({
 
   for (const channel of channels) {
     try {
-      const result = await backfillChannel({
+      const result = await syncChannelInbox({
         supabase,
         zernio,
         workspaceId,
@@ -157,33 +157,63 @@ export async function backfillInboxConversations({
   return { imported, linked };
 }
 
-async function backfillChannel({
+/** Conversation ids already stored for a channel, read past PostgREST's 1000-row cap. */
+async function fetchKnownConversationIds(
+  supabase: SupabaseClient,
+  channelId: string
+): Promise<Set<string>> {
+  const known = new Set<string>();
+  const pageSize = 1000;
+
+  for (let from = 0; ; from += pageSize) {
+    const { data } = await supabase
+      .from("conversations")
+      .select("late_conversation_id")
+      .eq("channel_id", channelId)
+      .not("late_conversation_id", "is", null)
+      .order("late_conversation_id")
+      .range(from, from + pageSize - 1);
+
+    const rows = (data ?? []) as { late_conversation_id: string | null }[];
+    for (const row of rows) {
+      if (row.late_conversation_id) known.add(row.late_conversation_id);
+    }
+    if (rows.length < pageSize) break;
+  }
+
+  return known;
+}
+
+/**
+ * Syncs one bounded window of a channel's Zernio inbox and returns the cursor
+ * to resume from, or null once the inbox is exhausted.
+ *
+ * Draining a large inbox takes minutes, far longer than a browser will wait on
+ * a single request, so callers page through it in short successive calls.
+ * Resuming across calls is safe: the upsert ignores conflicts and adoption only
+ * writes while late_conversation_id is still null, so a participant already
+ * handled in an earlier window cannot be overwritten by an older conversation.
+ */
+export async function syncChannelInbox({
   supabase,
   zernio,
   workspaceId,
   channel,
-  maxPages,
+  cursor,
+  maxPages = DEFAULT_MAX_PAGES_PER_CHANNEL,
 }: {
   supabase: SupabaseClient;
   zernio: Zernio;
   workspaceId: string;
   channel: BackfillChannel;
-  maxPages: number;
-}): Promise<{ imported: number; linked: number }> {
-  const { data: existingRows } = await supabase
-    .from("conversations")
-    .select("late_conversation_id")
-    .eq("channel_id", channel.id);
-
-  const known = new Set(
-    (existingRows ?? [])
-      .map((r: { late_conversation_id: string | null }) => r.late_conversation_id)
-      .filter(Boolean)
-  );
+  cursor?: string | null;
+  maxPages?: number;
+}): Promise<{ imported: number; linked: number; nextCursor: string | null }> {
+  const known = await fetchKnownConversationIds(supabase, channel.id);
 
   let imported = 0;
   let linked = 0;
-  let cursor: string | undefined;
+  let next: string | undefined = cursor ?? undefined;
   const seenParticipants = new Set<string>();
 
   for (let page = 0; page < maxPages; page++) {
@@ -192,7 +222,7 @@ async function backfillChannel({
         accountId: channel.late_account_id,
         limit: PAGE_SIZE,
         sortOrder: "desc",
-        cursor,
+        cursor: next,
       },
     });
 
@@ -219,11 +249,15 @@ async function backfillChannel({
     }
 
     const pagination = res.data?.pagination;
-    if (!pagination?.hasMore || !pagination.nextCursor) break;
-    cursor = pagination.nextCursor;
+    if (!pagination?.hasMore || !pagination.nextCursor) {
+      return { imported, linked, nextCursor: null };
+    }
+    next = pagination.nextCursor;
   }
 
-  return { imported, linked };
+  // Page budget spent with more inbox left: hand the cursor back so the caller
+  // can continue in the next request.
+  return { imported, linked, nextCursor: next ?? null };
 }
 
 type ImportOutcome = "imported" | "linked" | "skipped" | "failed";

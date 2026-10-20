@@ -1,30 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createZernioClient } from "@/lib/zernio-client";
-import { getWorkspaceCredentials } from "@/lib/workspace-credentials";
-import { backfillInboxConversations } from "@/lib/inbox-sync";
+import { RETRIABLE_REASONS, isReplyWindowOpen } from "@/lib/broadcast-window";
 import type { Json } from "@/lib/types/database";
-
-/**
- * The exact reason the queue worker records when a contact has no Zernio
- * conversation. Only these failures are retried: the send provably never
- * reached Zernio, so re-queueing cannot produce a duplicate message. A
- * recipient that failed inside the API call is left alone.
- */
-const NO_CONVERSATION_REASON =
-  "No synced conversation for this contact on this channel";
 
 /** PostgREST caps responses at 1000 rows, so every list read is paginated. */
 const PAGE_SIZE = 1000;
 /** Keeps `in(...)` filters out of oversized query strings. */
 const UPDATE_CHUNK = 200;
 const JOB_CHUNK = 100;
-/** The comment flow can leave thousands of unlinked conversations behind. */
-const MAX_PAGES_PER_CHANNEL = 40;
-
-// Paging the whole inbox is far slower than a normal request, so raise the
-// budget above the 15s default.
-export const maxDuration = 300;
 
 type PageReader<T> = (
   from: number,
@@ -54,9 +37,13 @@ function chunk<T>(items: T[], size: number): T[][] {
 /**
  * POST /api/v1/broadcasts/:broadcastId/retry-unreachable
  *
- * Syncs the inbox so comment-created conversations get their Zernio id, then
- * re-queues the recipients that failed purely for the lack of one. The saved
- * message_content is reused as-is.
+ * Re-queues recipients blocked by an unsynced conversation or closed window
+ * only when they are now linked and inside the platform's reply window.
+ * The saved message_content is reused as-is.
+ *
+ * Linking the conversations is a separate, resumable step
+ * (/api/v1/channels/:channelId/sync-inbox); this route only reads what is
+ * already stored, so it answers fast.
  */
 export async function POST(
   _request: Request,
@@ -93,46 +80,17 @@ export async function POST(
     );
   }
 
-  const credentials = await getWorkspaceCredentials(broadcast.workspace_id);
-  if (!credentials?.late_api_key_encrypted) {
-    return NextResponse.json(
-      { error: "Zernio API key not configured. Go to Settings first." },
-      { status: 400 }
-    );
-  }
-
-  const { data: channels } = await supabase
-    .from("channels")
-    .select("id, late_account_id, platform")
-    .eq("workspace_id", broadcast.workspace_id)
-    .eq("is_active", true);
-
-  if (!channels?.length) {
-    return NextResponse.json(
-      { error: "No active channel in this workspace." },
-      { status: 400 }
-    );
-  }
-
-  // 1. Pull the inbox so conversations created by the comment flow (which have
-  //    no late_conversation_id) adopt their Zernio id.
-  const zernio = createZernioClient(credentials.late_api_key_encrypted);
-  const { imported, linked } = await backfillInboxConversations({
-    supabase,
-    zernio,
-    workspaceId: broadcast.workspace_id,
-    channels,
-    maxPages: MAX_PAGES_PER_CHANNEL,
-  });
-
-  // 2. Which (contact, channel) pairs can now be delivered to.
+  // 1. Every conversation that now carries a Zernio id, with the data needed
+  //    to tell whether the reply window is still open.
   const conversations = await fetchAll<{
     contact_id: string;
     channel_id: string;
+    platform: string;
+    last_message_at: string | null;
   }>((from, to) =>
     supabase
       .from("conversations")
-      .select("contact_id, channel_id")
+      .select("contact_id, channel_id, platform, last_message_at")
       .eq("workspace_id", broadcast.workspace_id)
       .not("late_conversation_id", "is", null)
       // Ordered by the primary key: contact_id alone is not unique (a contact
@@ -142,11 +100,11 @@ export async function POST(
       .range(from, to)
   );
 
-  const reachable = new Set(
-    conversations.map((c) => `${c.contact_id}:${c.channel_id}`)
+  const linked = new Map(
+    conversations.map((c) => [`${c.contact_id}:${c.channel_id}`, c])
   );
 
-  // 3. Recipients that failed only for the missing conversation.
+  // 2. Only failures known to be safe to retry, never uncertain deliveries.
   const stranded = await fetchAll<{
     id: string;
     contact_id: string;
@@ -157,33 +115,56 @@ export async function POST(
       .select("id, contact_id, channel_id")
       .eq("broadcast_id", broadcastId)
       .eq("status", "failed")
-      .eq("error_message", NO_CONVERSATION_REASON)
+      .in("error_message", [...RETRIABLE_REASONS])
       .order("id")
       .range(from, to)
   );
 
-  const retryable = stranded.filter((r) =>
-    reachable.has(`${r.contact_id}:${r.channel_id}`)
-  );
+  const now = Date.now();
+  const retryable: string[] = [];
+  let stillUnlinked = 0;
+  let outsideWindow = 0;
+
+  for (const recipient of stranded) {
+    const conversation = linked.get(
+      `${recipient.contact_id}:${recipient.channel_id}`
+    );
+
+    if (!conversation) {
+      stillUnlinked++;
+      continue;
+    }
+
+    if (!isReplyWindowOpen({
+      platform: conversation.platform,
+      lastMessageAt: conversation.last_message_at,
+      now,
+    })) {
+      outsideWindow++;
+      continue;
+    }
+
+    retryable.push(recipient.id);
+  }
 
   if (!retryable.length) {
     return NextResponse.json({
-      conversationsImported: imported,
-      conversationsLinked: linked,
       requeued: 0,
-      stillUnreachable: stranded.length,
+      stillUnlinked,
+      outsideWindow,
     });
   }
 
-  // 4. Flip them back to pending. The status filter keeps the update idempotent
+  // 3. Flip them back to pending. The status filter keeps the update idempotent
   //    if two runs overlap, and only rows this run actually claimed are queued.
   const requeuedIds: string[] = [];
-  for (const batch of chunk(retryable.map((r) => r.id), UPDATE_CHUNK)) {
+  for (const batch of chunk(retryable, UPDATE_CHUNK)) {
     const { data: updated, error: updateError } = await supabase
       .from("broadcast_recipients")
       .update({ status: "pending", error_message: null })
       .in("id", batch)
       .eq("status", "failed")
+      .in("error_message", [...RETRIABLE_REASONS])
       .select("id");
 
     if (updateError) {
@@ -195,7 +176,7 @@ export async function POST(
     requeuedIds.push(...(updated ?? []).map((r) => r.id));
   }
 
-  // 5. Queue one delivery job per recipient, spaced like the original send.
+  // 4. Queue one delivery job per recipient, spaced like the original send.
   const jobs = requeuedIds.map((recipientId, index) => ({
     type: "send_broadcast",
     payload: { broadcastId, recipientId } as unknown as Json,
@@ -215,7 +196,7 @@ export async function POST(
     }
   }
 
-  // 6. Recompute the counters from the recipient rows rather than adjusting
+  // 5. Recompute the counters from the recipient rows rather than adjusting
   //    them by hand, so they cannot drift out of sync with reality.
   const [{ count: sentCount }, { count: failedCount }] = await Promise.all([
     supabase
@@ -241,9 +222,8 @@ export async function POST(
     .eq("id", broadcastId);
 
   return NextResponse.json({
-    conversationsImported: imported,
-    conversationsLinked: linked,
     requeued: requeuedIds.length,
-    stillUnreachable: stranded.length - requeuedIds.length,
+    stillUnlinked,
+    outsideWindow,
   });
 }

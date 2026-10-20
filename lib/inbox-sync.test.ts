@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Zernio } from "./zernio-client";
-import { backfillInboxConversations } from "./inbox-sync";
+import { backfillInboxConversations, syncChannelInbox } from "./inbox-sync";
 
 interface CapturedRow {
   table: string;
@@ -38,6 +38,17 @@ function makeFakeSupabase(seed: {
         },
         eq(col: string, val: unknown) {
           filters[col] = val;
+          return builder;
+        },
+        // The known-conversation read pages with .not().order().range(), and
+        // range is awaited straight away via the thenable below.
+        not() {
+          return builder;
+        },
+        order() {
+          return builder;
+        },
+        range() {
           return builder;
         },
         single() {
@@ -481,5 +492,65 @@ describe("backfillInboxConversations", () => {
 
     expect(res.imported).toBe(1);
     expect(fake.upserts[0].row).toMatchObject({ channel_id: "ch-1" });
+  });
+});
+
+describe("syncChannelInbox", () => {
+  it("hands back a cursor when the page budget is spent with inbox left", async () => {
+    const fake = makeFakeSupabase({});
+    const z = fakeZernio([
+      { data: [conv("c1")], pagination: { hasMore: true, nextCursor: "cur-3" } },
+    ]);
+
+    const res = await syncChannelInbox({
+      supabase: fake.client,
+      zernio: z.client,
+      workspaceId: "ws-1",
+      channel,
+      maxPages: 2,
+    });
+
+    expect(z.list).toHaveBeenCalledTimes(2);
+    // Non-null is what tells the caller to come back for another window.
+    expect(res.nextCursor).toBe("cur-3");
+  });
+
+  it("reports a null cursor once the inbox is exhausted", async () => {
+    const fake = makeFakeSupabase({});
+    const z = fakeZernio([
+      { data: [conv("c1")], pagination: { hasMore: false, nextCursor: null } },
+    ]);
+
+    const res = await syncChannelInbox({
+      supabase: fake.client,
+      zernio: z.client,
+      workspaceId: "ws-1",
+      channel,
+      maxPages: 5,
+    });
+
+    expect(z.list).toHaveBeenCalledTimes(1);
+    expect(res.nextCursor).toBeNull();
+    expect(res.imported).toBe(1);
+  });
+
+  it("resumes from the cursor it is given instead of restarting the inbox", async () => {
+    const fake = makeFakeSupabase({});
+    const z = fakeZernio([
+      { data: [conv("c9")], pagination: { hasMore: false } },
+    ]);
+
+    await syncChannelInbox({
+      supabase: fake.client,
+      zernio: z.client,
+      workspaceId: "ws-1",
+      channel,
+      cursor: "cur-7",
+      maxPages: 1,
+    });
+
+    expect(z.list).toHaveBeenCalledWith({
+      query: { accountId: "acc-1", limit: 50, sortOrder: "desc", cursor: "cur-7" },
+    });
   });
 });
