@@ -11,8 +11,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Zernio } from "./zernio-client";
 import { messagePreview } from "@/lib/message-preview";
 
-/** Cap per channel: 4 pages x 50 conversations. */
-const MAX_PAGES_PER_CHANNEL = 4;
+/** Cap per channel, in pages of PAGE_SIZE conversations. */
+const DEFAULT_MAX_PAGES_PER_CHANNEL = 4;
 const PAGE_SIZE = 50;
 
 export interface BackfillChannel {
@@ -109,29 +109,43 @@ export async function upsertContactForSender({
 
 /**
  * Imports Zernio inbox conversations missing from the local `conversations`
- * table. Insert-only: conversations already known (by late_conversation_id)
- * are skipped, and a contact whose (channel_id, contact_id) row already exists
- * under a different late_conversation_id is left to the webhook, so the
- * webhook-maintained late_conversation_id / status / last_message_at /
- * unread_count are never clobbered. A failing channel is logged and skipped,
- * not fatal.
+ * table. Conversations already known by late_conversation_id are skipped, and
+ * a row that already carries a late_conversation_id is left to the webhook so
+ * its status / last_message_at / unread_count are never clobbered.
+ *
+ * Rows whose late_conversation_id is still null are *adopted*: the comment
+ * flow creates a conversation before any DM exists, so without this those
+ * contacts could never receive a broadcast or an inbox reply.
+ *
+ * A failing channel is logged and skipped, not fatal.
  */
 export async function backfillInboxConversations({
   supabase,
   zernio,
   workspaceId,
   channels,
+  maxPages = DEFAULT_MAX_PAGES_PER_CHANNEL,
 }: {
   supabase: SupabaseClient;
   zernio: Zernio;
   workspaceId: string;
   channels: BackfillChannel[];
-}): Promise<{ imported: number }> {
+  maxPages?: number;
+}): Promise<{ imported: number; linked: number }> {
   let imported = 0;
+  let linked = 0;
 
   for (const channel of channels) {
     try {
-      imported += await backfillChannel({ supabase, zernio, workspaceId, channel });
+      const result = await backfillChannel({
+        supabase,
+        zernio,
+        workspaceId,
+        channel,
+        maxPages,
+      });
+      imported += result.imported;
+      linked += result.linked;
     } catch (err) {
       console.error(
         `[inbox-sync] backfill failed for channel ${channel.id} (${channel.platform}):`,
@@ -140,7 +154,7 @@ export async function backfillInboxConversations({
     }
   }
 
-  return { imported };
+  return { imported, linked };
 }
 
 async function backfillChannel({
@@ -148,12 +162,14 @@ async function backfillChannel({
   zernio,
   workspaceId,
   channel,
+  maxPages,
 }: {
   supabase: SupabaseClient;
   zernio: Zernio;
   workspaceId: string;
   channel: BackfillChannel;
-}): Promise<number> {
+  maxPages: number;
+}): Promise<{ imported: number; linked: number }> {
   const { data: existingRows } = await supabase
     .from("conversations")
     .select("late_conversation_id")
@@ -166,10 +182,11 @@ async function backfillChannel({
   );
 
   let imported = 0;
+  let linked = 0;
   let cursor: string | undefined;
   const seenParticipants = new Set<string>();
 
-  for (let page = 0; page < MAX_PAGES_PER_CHANNEL; page++) {
+  for (let page = 0; page < maxPages; page++) {
     const res = await zernio.messages.listInboxConversations({
       query: {
         accountId: channel.late_account_id,
@@ -190,9 +207,15 @@ async function backfillChannel({
       if (seenParticipants.has(conv.participantId)) continue;
       seenParticipants.add(conv.participantId);
       if (known.has(conv.id)) continue;
-      if (await importConversation({ supabase, workspaceId, channel, conv })) {
-        imported++;
-      }
+
+      const outcome = await importConversation({
+        supabase,
+        workspaceId,
+        channel,
+        conv,
+      });
+      if (outcome === "imported") imported++;
+      else if (outcome === "linked") linked++;
     }
 
     const pagination = res.data?.pagination;
@@ -200,8 +223,10 @@ async function backfillChannel({
     cursor = pagination.nextCursor;
   }
 
-  return imported;
+  return { imported, linked };
 }
+
+type ImportOutcome = "imported" | "linked" | "skipped" | "failed";
 
 async function importConversation({
   supabase,
@@ -213,7 +238,7 @@ async function importConversation({
   workspaceId: string;
   channel: BackfillChannel;
   conv: ZernioInboxConversation;
-}): Promise<boolean> {
+}): Promise<ImportOutcome> {
   const interactionAt = conv.updatedTime ?? new Date().toISOString();
   const contact = await upsertContactForSender({
     supabase,
@@ -227,13 +252,13 @@ async function importConversation({
 
   if (!contact) {
     console.error(`[inbox-sync] failed to create contact for conversation ${conv.id}`);
-    return false;
+    return "failed";
   }
 
-  // ignoreDuplicates: an existing (channel_id, contact_id) row is owned by the
-  // webhook (possibly under a different late_conversation_id) and must stay
-  // untouched; the conflict then returns no rows, so it is not counted as
-  // imported either.
+  // ignoreDuplicates: an existing (channel_id, contact_id) row may be owned by
+  // the webhook and must stay untouched; the conflict then returns no rows, so
+  // it is not counted as imported either. The adoption step below handles the
+  // one case where touching it is safe.
   const { data: insertedRows, error } = await supabase
     .from("conversations")
     .upsert(
@@ -254,19 +279,41 @@ async function importConversation({
 
   if (error) {
     console.error(`[inbox-sync] failed to upsert conversation ${conv.id}:`, error);
-    return false;
+    return "failed";
   }
 
-  const inserted = (insertedRows ?? []).length > 0;
-
-  // Stamp the existing contact only after the conversation row was actually
-  // inserted; a webhook-owned duplicate is not a new interaction.
-  if (inserted && contact.existed) {
-    await supabase
-      .from("contacts")
-      .update({ last_interaction_at: interactionAt })
-      .eq("id", contact.contactId);
+  if ((insertedRows ?? []).length > 0) {
+    // Stamp the existing contact only after the conversation row was actually
+    // inserted; a webhook-owned duplicate is not a new interaction.
+    if (contact.existed) {
+      await supabase
+        .from("contacts")
+        .update({ last_interaction_at: interactionAt })
+        .eq("id", contact.contactId);
+    }
+    return "imported";
   }
 
-  return inserted;
+  // A local row already owns (channel_id, contact_id). The comment flow
+  // creates conversations before any Zernio DM exists, leaving
+  // late_conversation_id null — and every delivery path (broadcasts, inbox
+  // replies, flow messages) needs that id. Adopt it here, but only while it is
+  // still null: a non-null value is webhook-owned and must not be rewritten.
+  const { data: linkedRows, error: linkError } = await supabase
+    .from("conversations")
+    .update({ late_conversation_id: conv.id })
+    .eq("channel_id", channel.id)
+    .eq("contact_id", contact.contactId)
+    .is("late_conversation_id", null)
+    .select("id");
+
+  if (linkError) {
+    console.error(
+      `[inbox-sync] failed to link conversation ${conv.id} to the existing row:`,
+      linkError
+    );
+    return "failed";
+  }
+
+  return (linkedRows ?? []).length > 0 ? "linked" : "skipped";
 }

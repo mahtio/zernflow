@@ -20,6 +20,9 @@ function makeFakeSupabase(seed: {
   /** Contact ids that already have a conversations row on the channel, so the
    * ignoreDuplicates upsert conflicts and returns no inserted rows. */
   conversationContactIds?: string[];
+  /** Contact ids whose existing conversations row still has a null
+   * late_conversation_id, so the adoption UPDATE matches it. */
+  unlinkedContactIds?: string[];
 }) {
   const inserts: CapturedRow[] = [];
   const upserts: CapturedRow[] = [];
@@ -75,12 +78,44 @@ function makeFakeSupabase(seed: {
           return Promise.resolve({ data: null, error: null });
         },
         update(patch: Record<string, unknown>) {
-          return {
-            eq() {
-              updates.push({ table, row: patch });
-              return Promise.resolve({ data: null, error: null });
+          // The adoption path chains .eq().eq().is().select(), while the
+          // contacts stamp is awaited straight after .eq(), so the builder has
+          // to be both chainable and thenable.
+          const updateFilters: Record<string, unknown> = {};
+          const ub = {
+            eq(col: string, val: unknown) {
+              updateFilters[col] = val;
+              return ub;
+            },
+            is(col: string, val: unknown) {
+              updateFilters[col] = val;
+              return ub;
+            },
+            select() {
+              updates.push({ table, row: patch, options: updateFilters });
+              const matched =
+                table === "conversations" &&
+                updateFilters.late_conversation_id === null &&
+                (seed.unlinkedContactIds ?? []).includes(
+                  updateFilters.contact_id as string
+                );
+              return Promise.resolve({
+                data: matched ? [{ id: "conv-adopted" }] : [],
+                error: null,
+              });
+            },
+            then(
+              resolve: (value: { data: null; error: null }) => unknown,
+              reject?: (reason: unknown) => unknown
+            ) {
+              updates.push({ table, row: patch, options: updateFilters });
+              return Promise.resolve({ data: null, error: null }).then(
+                resolve,
+                reject
+              );
             },
           };
+          return ub;
         },
         upsert(row: Record<string, unknown>, options?: Record<string, unknown>) {
           upserts.push({ table, row, options });
@@ -254,9 +289,59 @@ describe("backfillInboxConversations", () => {
     });
 
     expect(res.imported).toBe(0);
+    expect(res.linked).toBe(0);
     expect(fake.upserts).toHaveLength(1);
     expect(fake.upserts[0].options).toMatchObject({ ignoreDuplicates: true });
     expect(fake.updates.filter((u) => u.table === "contacts")).toHaveLength(0);
+  });
+
+  it("adopts a conversation row the comment flow left without a Zernio id", async () => {
+    const fake = makeFakeSupabase({
+      contactChannelBySender: { "sender-c1": "contact-existing" },
+      conversationContactIds: ["contact-existing"],
+      unlinkedContactIds: ["contact-existing"],
+    });
+    const z = fakeZernio([{ data: [conv("c1")], pagination: { hasMore: false } }]);
+
+    const res = await backfillInboxConversations({
+      supabase: fake.client,
+      zernio: z.client,
+      workspaceId: "ws-1",
+      channels: [channel],
+    });
+
+    // Counted as linked, not imported: no new row was created.
+    expect(res.imported).toBe(0);
+    expect(res.linked).toBe(1);
+
+    const convUpdates = fake.updates.filter((u) => u.table === "conversations");
+    expect(convUpdates).toHaveLength(1);
+    expect(convUpdates[0].row).toEqual({ late_conversation_id: "c1" });
+    // The null guard is what keeps a webhook-owned id from being overwritten.
+    expect(convUpdates[0].options).toMatchObject({
+      channel_id: "ch-1",
+      contact_id: "contact-existing",
+      late_conversation_id: null,
+    });
+  });
+
+  it("leaves a webhook-owned id untouched when adoption matches no row", async () => {
+    const fake = makeFakeSupabase({
+      contactChannelBySender: { "sender-c1": "contact-existing" },
+      conversationContactIds: ["contact-existing"],
+      // Not listed as unlinked: the row already carries a webhook-owned id.
+    });
+    const z = fakeZernio([{ data: [conv("c1")], pagination: { hasMore: false } }]);
+
+    const res = await backfillInboxConversations({
+      supabase: fake.client,
+      zernio: z.client,
+      workspaceId: "ws-1",
+      channels: [channel],
+    });
+
+    expect(res.imported).toBe(0);
+    expect(res.linked).toBe(0);
   });
 
   it("skips conversations already present locally (insert-only backfill)", async () => {
@@ -321,7 +406,7 @@ describe("backfillInboxConversations", () => {
     });
   });
 
-  it("hard-caps pagination at 4 pages per channel", async () => {
+  it("hard-caps pagination at 4 pages per channel by default", async () => {
     const fake = makeFakeSupabase({});
     const z = fakeZernio([
       { data: [conv("c1")], pagination: { hasMore: true, nextCursor: "next" } },
@@ -335,6 +420,23 @@ describe("backfillInboxConversations", () => {
     });
 
     expect(z.list).toHaveBeenCalledTimes(4);
+  });
+
+  it("honors a raised maxPages so a deep inbox can be drained", async () => {
+    const fake = makeFakeSupabase({});
+    const z = fakeZernio([
+      { data: [conv("c1")], pagination: { hasMore: true, nextCursor: "next" } },
+    ]);
+
+    await backfillInboxConversations({
+      supabase: fake.client,
+      zernio: z.client,
+      workspaceId: "ws-1",
+      channels: [channel],
+      maxPages: 9,
+    });
+
+    expect(z.list).toHaveBeenCalledTimes(9);
   });
 
   it("skips items without an id or participantId", async () => {

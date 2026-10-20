@@ -18,6 +18,7 @@ import {
   Users,
   Play,
   Pause,
+  RefreshCw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -567,6 +568,11 @@ function BroadcastDetail({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [retrying, setRetrying] = useState(false);
+  const [retryInfo, setRetryInfo] = useState<string | null>(null);
+  // Bumped after a retry so the queue runner remounts and starts draining the
+  // newly queued jobs instead of sitting on its already-finished loop.
+  const [queueNonce, setQueueNonce] = useState(0);
 
   const isDraft = broadcast.status === "draft" || broadcast.status === "scheduled";
   const status = statusConfig[broadcast.status];
@@ -598,6 +604,49 @@ function BroadcastDetail({
       setError(err instanceof Error ? err.message : "Failed to save");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleRetryUnreachable() {
+    setRetrying(true);
+    setError(null);
+    setRetryInfo(null);
+
+    try {
+      const res = await fetch(
+        `/api/v1/broadcasts/${broadcast.id}/retry-unreachable`,
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to retry");
+
+      setRetryInfo(
+        pt
+          ? `${data.conversationsLinked} conversas vinculadas, ${data.conversationsImported} importadas · ${data.requeued} destinatários reenfileirados${
+              data.stillUnreachable
+                ? ` · ${data.stillUnreachable} seguem sem conversa`
+                : ""
+            }`
+          : `${data.conversationsLinked} conversations linked, ${data.conversationsImported} imported · ${data.requeued} recipients re-queued${
+              data.stillUnreachable
+                ? ` · ${data.stillUnreachable} still have no conversation`
+                : ""
+            }`
+      );
+
+      const supabase = createClient();
+      const { data: row } = await supabase
+        .from("broadcasts")
+        .select("*")
+        .eq("id", broadcast.id)
+        .maybeSingle();
+      if (row) onUpdate(row);
+
+      if (data.requeued > 0) setQueueNonce((n) => n + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to retry");
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -705,7 +754,54 @@ function BroadcastDetail({
 
           {/* Live queue drain while the broadcast is sending */}
           {broadcast.status === "sending" && (
-            <QueueRunner broadcast={broadcast} onUpdate={onUpdate} />
+            <QueueRunner
+              key={queueNonce}
+              broadcast={broadcast}
+              onUpdate={onUpdate}
+            />
+          )}
+
+          {/* Recover recipients that failed for a missing conversation */}
+          {!isDraft && broadcast.failed > 0 && (
+            <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium">
+                    {pt
+                      ? `${broadcast.failed} destinatários falharam`
+                      : `${broadcast.failed} recipients failed`}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {pt
+                      ? "Contatos vindos de comentários têm conversa criada antes do DM existir, então ficam sem o identificador do Zernio. Sincronize a caixa de entrada para vincular e reenviar — a mensagem salva é reaproveitada sem alteração."
+                      : "Contacts coming from comments get a conversation before any DM exists, so they carry no Zernio id. Sync the inbox to link them and retry — the saved message is reused unchanged."}
+                  </p>
+                </div>
+                <button
+                  onClick={handleRetryUnreachable}
+                  disabled={retrying}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                >
+                  <RefreshCw
+                    className={cn("h-4 w-4", retrying && "animate-spin")}
+                  />
+                  {retrying
+                    ? pt
+                      ? "Sincronizando..."
+                      : "Syncing..."
+                    : pt
+                      ? "Sincronizar e reenviar"
+                      : "Sync and retry"}
+                </button>
+              </div>
+
+              {retryInfo && (
+                <div className="flex items-start gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700 dark:border-green-900/50 dark:bg-green-900/20 dark:text-green-400">
+                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {retryInfo}
+                </div>
+              )}
+            </div>
           )}
 
           {/* Audience preview for drafts */}

@@ -8,6 +8,7 @@ import {
 } from "@/lib/zernio-webhook";
 import { backfillInboxConversations } from "@/lib/inbox-sync";
 import { isSupportedPlatform } from "@/lib/platforms";
+import { getApiWorkspaceId } from "@/lib/api-workspace";
 
 async function getWorkspace(supabase: Awaited<ReturnType<typeof createClient>>) {
   const {
@@ -15,15 +16,19 @@ async function getWorkspace(supabase: Awaited<ReturnType<typeof createClient>>) 
   } = await supabase.auth.getUser();
   if (!user) return null;
 
-  const { data: membership } = await supabase
-    .from("workspace_members")
-    .select("workspace_id, workspaces(*)")
-    .eq("user_id", user.id)
-    .limit(1)
-    .single();
+  // Honor the workspace selected in the dashboard. Picking an arbitrary
+  // membership row instead would sync (and backfill conversations into) a
+  // different workspace than the one on screen.
+  const workspaceId = await getApiWorkspaceId(supabase, user.id);
+  if (!workspaceId) return null;
 
-  if (!membership?.workspaces) return null;
-  return membership.workspaces;
+  const { data: workspace } = await supabase
+    .from("workspaces")
+    .select("*")
+    .eq("id", workspaceId)
+    .maybeSingle();
+
+  return workspace ?? null;
 }
 
 /**
@@ -151,6 +156,7 @@ export async function POST() {
 
     // Backfill conversations that predate webhook registration (best-effort).
     let conversationsImported = 0;
+    let conversationsLinked = 0;
     try {
       const { data: activeChannels } = await supabase
         .from("channels")
@@ -158,13 +164,14 @@ export async function POST() {
         .eq("workspace_id", workspace.id)
         .eq("is_active", true);
 
-      const { imported } = await backfillInboxConversations({
+      const { imported, linked } = await backfillInboxConversations({
         supabase,
         zernio,
         workspaceId: workspace.id,
         channels: activeChannels ?? [],
       });
       conversationsImported = imported;
+      conversationsLinked = linked;
     } catch (err) {
       console.error("[channels/sync] inbox backfill failed:", err);
     }
@@ -183,6 +190,7 @@ export async function POST() {
         updated,
         deactivated,
         conversationsImported,
+        conversationsLinked,
         skipped: [...new Set(skipped)],
         failed,
       },

@@ -132,11 +132,16 @@ export function ChannelsView({
         updated,
         deactivated,
         conversationsImported = 0,
+        conversationsLinked = 0,
         failed = [],
         skipped = [],
       } = data.synced;
       const nothingChanged =
-        created === 0 && updated === 0 && deactivated === 0 && conversationsImported === 0;
+        created === 0 &&
+        updated === 0 &&
+        deactivated === 0 &&
+        conversationsImported === 0 &&
+        conversationsLinked === 0;
       if (failed.length > 0) {
         setSyncMessage(`Could not save some channels: ${failed.join("; ")}`);
       } else if (nothingChanged && syncedChannels.length === 0 && skipped.length > 0) {
@@ -151,6 +156,7 @@ export function ChannelsView({
         if (updated > 0) parts.push(`${updated} updated`);
         if (deactivated > 0) parts.push(`${deactivated} deactivated`);
         if (conversationsImported > 0) parts.push(`${conversationsImported} conversations imported`);
+        if (conversationsLinked > 0) parts.push(`${conversationsLinked} conversations linked`);
         setSyncMessage(parts.join(", "));
       }
       setTimeout(() => setSyncMessage(null), failed.length > 0 ? 10000 : 4000);
