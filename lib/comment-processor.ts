@@ -29,9 +29,9 @@ function normalizeCommentText(value: string): string {
 }
 
 /**
- * Returns the first trigger whose keywords match the comment text, honoring
- * per-keyword matchType and optional postIds scoping. Triggers are checked in
- * array order — callers pass them pre-sorted by priority.
+ * Honors explicit priority, then match type, keyword length and a stable id
+ * tie-breaker, just like DM keyword triggers. A generic number must not steal
+ * a comment containing a more specific keyword such as COR or 2027.
  */
 export function matchCommentTrigger(
   triggers: Trigger[],
@@ -40,6 +40,12 @@ export function matchCommentTrigger(
   const text = normalizeCommentText(comment.text);
   if (!text) return null;
 
+  const candidates: Array<{
+    trigger: Trigger;
+    matchRank: number;
+    keywordLength: number;
+  }> = [];
+
   for (const trigger of triggers) {
     const config = trigger.config as unknown as CommentKeywordConfig;
     if (!config.keywords?.length) continue;
@@ -47,14 +53,30 @@ export function matchCommentTrigger(
 
     for (const kw of config.keywords) {
       const keyword = normalizeCommentText(kw.value);
+      if (!keyword) continue;
       const matchType = kw.matchType || "contains";
-      if (matchType === "exact" && text === keyword) return trigger;
-      if (matchType === "contains" && text.includes(keyword)) return trigger;
-      if (matchType === "startsWith" && text.startsWith(keyword)) return trigger;
+      const matched = matchType === "exact"
+        ? text === keyword
+        : matchType === "startsWith"
+          ? text.startsWith(keyword)
+          : text.includes(keyword);
+      if (matched) {
+        candidates.push({
+          trigger,
+          matchRank: matchType === "exact" ? 3 : matchType === "startsWith" ? 2 : 1,
+          keywordLength: keyword.length,
+        });
+      }
     }
   }
 
-  return null;
+  candidates.sort((a, b) =>
+    ((b.trigger.priority ?? 0) - (a.trigger.priority ?? 0)) ||
+    (b.matchRank - a.matchRank) ||
+    (b.keywordLength - a.keywordLength) ||
+    (a.trigger.id < b.trigger.id ? -1 : a.trigger.id > b.trigger.id ? 1 : 0)
+  );
+  return candidates[0]?.trigger ?? null;
 }
 
 export async function getActiveCommentTriggers(

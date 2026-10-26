@@ -51,10 +51,52 @@ describe("matchCommentTrigger", () => {
     expect(matchCommentTrigger([t], comment("Quero o portal 09/09, por favor"))?.id).toBe("t1");
   });
 
-  it("returns the first matching trigger in array order (caller pre-sorts by priority)", () => {
-    const low = trigger("low", { keywords: [{ value: "deal" }] });
-    const high = trigger("high", { keywords: [{ value: "deal" }] });
-    expect(matchCommentTrigger([high, low], comment("deal me in"))?.id).toBe("high");
+  it("honors explicit priority regardless of input order or keyword length", () => {
+    const low = trigger("low", { keywords: [{ value: "COR" }] });
+    const high = { ...trigger("high", { keywords: [{ value: "2" }] }), priority: 100 };
+    expect(matchCommentTrigger([low, high], comment("Cor o meu deu 2"))?.id).toBe("high");
+  });
+
+  it.each(["Cor o meu deu 2", "Qual a cor do número 5", "COR 2027"])(
+    "chooses COR rather than a generic number for %s at equal priority",
+    (text) => {
+      const numbers = trigger("numbers", { keywords: ["1", "2", "3", "4", "5"].map((value) => ({ value })) });
+      const cor = trigger("cor", { keywords: [{ value: "COR", matchType: "contains" }] });
+      expect(matchCommentTrigger([numbers, cor], comment(text))?.id).toBe("cor");
+      expect(matchCommentTrigger([cor, numbers], comment(text))?.id).toBe("cor");
+    }
+  );
+
+  it("keeps numeric-only comments on the numeric automation", () => {
+    const numbers = trigger("numbers", { keywords: [{ value: "2" }] });
+    const cor = trigger("cor", { keywords: [{ value: "COR" }] });
+    expect(matchCommentTrigger([cor, numbers], comment("2"))?.id).toBe("numbers");
+  });
+
+  it("prefers a specific year to generic digits at equal priority", () => {
+    const numbers = trigger("numbers", { keywords: [{ value: "2" }] });
+    const year = trigger("year", { keywords: [{ value: "2027" }] });
+    expect(matchCommentTrigger([numbers, year], comment("Quero 2027"))?.id).toBe("year");
+  });
+
+  it("ranks exact above startsWith above contains at equal priority", () => {
+    const contains = trigger("contains", { keywords: [{ value: "COR", matchType: "contains" }] });
+    const starts = trigger("starts", { keywords: [{ value: "CO", matchType: "startsWith" }] });
+    const exact = trigger("exact", { keywords: [{ value: "COR", matchType: "exact" }] });
+    expect(matchCommentTrigger([contains, starts, exact], comment("COR"))?.id).toBe("exact");
+    expect(matchCommentTrigger([contains, starts], comment("COR"))?.id).toBe("starts");
+  });
+
+  it("breaks equal matches by stable id rather than database row order", () => {
+    const a = trigger("a", { keywords: [{ value: "COR" }] });
+    const b = trigger("b", { keywords: [{ value: "COR" }] });
+    expect(matchCommentTrigger([b, a], comment("Cor"))?.id).toBe("a");
+    expect(matchCommentTrigger([a, b], comment("Cor"))?.id).toBe("a");
+  });
+
+  it("ignores empty keywords", () => {
+    const empty = trigger("empty", { keywords: [{ value: "   " }] });
+    expect(matchCommentTrigger([empty], comment("Cor"))).toBeNull();
   });
 
   it("respects postIds scoping", () => {
