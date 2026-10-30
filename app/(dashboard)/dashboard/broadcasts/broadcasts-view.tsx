@@ -647,18 +647,25 @@ function BroadcastDetail({
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ cursor }),
           });
-          const data = await res.json();
+          // Annotated so `cursor` does not depend on an inferred `any` below,
+          // which TypeScript reports as a circular initializer.
+          const data: {
+            imported?: number;
+            linked?: number;
+            nextCursor?: string | null;
+            error?: string;
+          } = await res.json();
           if (!res.ok) throw new Error(data.error || "Failed to sync the inbox");
 
-          processed += data.imported + data.linked;
-          linked += data.linked;
+          processed += (data.imported ?? 0) + (data.linked ?? 0);
+          linked += data.linked ?? 0;
           setRetryProgress(
             pt
               ? `Sincronizando a caixa de entrada... ${processed} conversas vinculadas`
               : `Syncing the inbox... ${processed} conversations linked`
           );
 
-          cursor = data.nextCursor;
+          cursor = data.nextCursor ?? null;
           if (!cursor) break;
         }
       }
