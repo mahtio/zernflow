@@ -2,6 +2,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/lib/types/database";
 import { executeFlow } from "@/lib/flow-engine/engine";
 import { createZernioClient } from "@/lib/zernio-client";
+import {
+  keywordMatches,
+  matchRankOf,
+  normalizeKeywordText,
+  type KeywordMatchType,
+} from "@/lib/keyword-match";
 
 type Channel = Database["public"]["Tables"]["channels"]["Row"];
 type Trigger = Database["public"]["Tables"]["triggers"]["Row"];
@@ -18,14 +24,10 @@ export type CommentForMatching = Pick<IncomingComment, "postId"> & { text: strin
 interface CommentKeywordConfig {
   keywords?: Array<{
     value: string;
-    matchType?: "exact" | "contains" | "startsWith";
+    matchType?: KeywordMatchType;
   }>;
   postIds?: string[];
   replyText?: string;
-}
-
-function normalizeCommentText(value: string): string {
-  return value.toLowerCase().trim();
 }
 
 /**
@@ -37,7 +39,7 @@ export function matchCommentTrigger(
   triggers: Trigger[],
   comment: CommentForMatching,
 ): Trigger | null {
-  const text = normalizeCommentText(comment.text);
+  const text = normalizeKeywordText(comment.text);
   if (!text) return null;
 
   const candidates: Array<{
@@ -52,18 +54,13 @@ export function matchCommentTrigger(
     if (config.postIds?.length && !config.postIds.includes(comment.postId)) continue;
 
     for (const kw of config.keywords) {
-      const keyword = normalizeCommentText(kw.value);
+      const keyword = normalizeKeywordText(kw.value);
       if (!keyword) continue;
       const matchType = kw.matchType || "contains";
-      const matched = matchType === "exact"
-        ? text === keyword
-        : matchType === "startsWith"
-          ? text.startsWith(keyword)
-          : text.includes(keyword);
-      if (matched) {
+      if (keywordMatches(text, keyword, matchType)) {
         candidates.push({
           trigger,
-          matchRank: matchType === "exact" ? 3 : matchType === "startsWith" ? 2 : 1,
+          matchRank: matchRankOf(matchType),
           keywordLength: keyword.length,
         });
       }

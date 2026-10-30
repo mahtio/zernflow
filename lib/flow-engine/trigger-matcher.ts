@@ -1,5 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/types/database";
+import {
+  keywordMatches,
+  matchRankOf,
+  normalizeKeywordText,
+  type KeywordMatchType,
+} from "@/lib/keyword-match";
 
 interface IncomingMessage {
   text?: string;
@@ -74,28 +80,24 @@ export async function matchTrigger(
 
   // 3. Check keyword triggers
   if (message.text) {
-    const text = message.text.toLowerCase().trim();
+    const text = normalizeKeywordText(message.text);
     const candidates: KeywordCandidate[] = [];
 
     for (const trigger of triggers.filter((t) => t.type === "keyword")) {
       const config = trigger.config as {
-        keywords?: Array<string | { value: string; matchType?: "exact" | "contains" | "startsWith" }>;
-        matchType?: "exact" | "contains" | "startsWith";
+        keywords?: Array<string | { value: string; matchType?: KeywordMatchType }>;
+        matchType?: KeywordMatchType;
       };
       if (!config.keywords) continue;
 
       for (const kw of config.keywords) {
-        const keyword = (typeof kw === "string" ? kw : kw.value).toLowerCase().trim();
+        const keyword = normalizeKeywordText(typeof kw === "string" ? kw : kw.value);
+        if (!keyword) continue;
         const matchType = (typeof kw === "object" && kw.matchType) || config.matchType || "contains";
-        const matched = matchType === "exact"
-          ? text === keyword
-          : matchType === "startsWith"
-            ? text.startsWith(keyword)
-            : text.includes(keyword);
-        if (matched) {
+        if (keywordMatches(text, keyword, matchType)) {
           candidates.push({
             trigger,
-            matchRank: matchType === "exact" ? 3 : matchType === "startsWith" ? 2 : 1,
+            matchRank: matchRankOf(matchType),
             keywordLength: keyword.length,
           });
         }

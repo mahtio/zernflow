@@ -6,6 +6,11 @@
 
 import type { Node, Edge } from "@xyflow/react";
 import { evaluateDateCondition } from "@/lib/flow-engine/date-condition";
+import {
+  keywordMatches,
+  normalizeKeywordText,
+  type KeywordMatchType,
+} from "@/lib/keyword-match";
 
 // --- Types ---
 
@@ -143,17 +148,21 @@ export function simulateFlow(
   // so matching, the result payload, and the error log render real keywords instead
   // of "[object Object]".
   const rawKeywords =
-    (triggerData.keywords as Array<string | { value: string }>) || [];
-  const keywords = rawKeywords
-    .map((k) => (typeof k === "string" ? k : k?.value ?? ""))
-    .filter((k) => k.length > 0);
+    (triggerData.keywords as Array<string | { value: string; matchType?: KeywordMatchType }>) || [];
+  const normalizedKeywords = rawKeywords
+    .map((k) => ({
+      value: normalizeKeywordText(typeof k === "string" ? k : k?.value ?? ""),
+      matchType: (typeof k === "string" ? undefined : k?.matchType) ?? ("contains" as KeywordMatchType),
+    }))
+    .filter((k) => k.value.length > 0);
+  const keywords = normalizedKeywords.map((k) => k.value);
   let triggerMatched = false;
 
   if (triggerType === "keyword" || triggerType === "comment_keyword") {
-    const msg = config.incomingMessage.toLowerCase();
+    const msg = normalizeKeywordText(config.incomingMessage);
     triggerMatched =
       keywords.length === 0 ||
-      keywords.some((k) => msg.includes(k.toLowerCase()));
+      normalizedKeywords.some((k) => keywordMatches(msg, k.value, k.matchType));
   } else if (triggerType === "welcome" || triggerType === "default") {
     triggerMatched = true;
   }

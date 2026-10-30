@@ -79,6 +79,35 @@ describe("matchCommentTrigger", () => {
     expect(matchCommentTrigger([numbers, year], comment("Quero 2027"))?.id).toBe("year");
   });
 
+  // Production regression: a "1..10" numeric automation was answering every
+  // comment that merely contained a digit, including "2027" and birth dates.
+  describe("digit automation alongside a year automation", () => {
+    const numbers = trigger("numbers", {
+      keywords: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"].map((value) => ({
+        value,
+        matchType: "contains",
+      })),
+    });
+    const year = trigger("year", { keywords: [{ value: "2027", matchType: "contains" }] });
+    const cor = trigger("cor", { keywords: [{ value: "COR", matchType: "contains" }] });
+    const all = [numbers, year, cor];
+
+    it.each(["2027", "Cor 2027", "quero saber a cor 2027!"])("routes %s to the year flow", (text) => {
+      expect(matchCommentTrigger(all, comment(text))?.id).toBe("year");
+    });
+
+    it.each(["3", "o meu deu 7", "18+10+2=30 / 3 + 0= 3"])(
+      "keeps %s on the digit flow",
+      (text) => {
+        expect(matchCommentTrigger(all, comment(text))?.id).toBe("numbers");
+      }
+    );
+
+    it("does not let digits inside a birth date trigger the digit flow", () => {
+      expect(matchCommentTrigger([numbers], comment("12/06/1952 e 21/01/1986"))).toBeNull();
+    });
+  });
+
   it("ranks exact above startsWith above contains at equal priority", () => {
     const contains = trigger("contains", { keywords: [{ value: "COR", matchType: "contains" }] });
     const starts = trigger("starts", { keywords: [{ value: "CO", matchType: "startsWith" }] });
